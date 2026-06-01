@@ -48,4 +48,4 @@ llama-server --model /path/to/embedding-model.gguf --port 8080 --embeddings
 
 ## Maintainers
 
-- [Your drupal.org username](https://www.drupal.org/u/your-username)
+- [leofishman](https://www.drupal.org/u/leofishman)
