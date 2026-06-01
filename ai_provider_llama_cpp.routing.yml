@@ -1,0 +1,7 @@
+ai_provider_llama_cpp.settings_form:
+  path: '/admin/config/ai/providers/llama-cpp'
+  defaults:
+    _form: '\Drupal\ai_provider_llama_cpp\Form\LlamaCppConfigForm'
+    _title: 'Setup llama.cpp'
+  requirements:
+    _permission: 'administer ai providers'

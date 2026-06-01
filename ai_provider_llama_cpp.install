@@ -1,0 +1,13 @@
+<?php
+
+/**
+ * @file
+ * Install file for the llama.cpp provider module.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function ai_provider_llama_cpp_uninstall() {
+  \Drupal::state()->delete('ai_provider_llama_cpp.models');
+}
