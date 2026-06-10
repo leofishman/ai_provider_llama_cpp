@@ -288,7 +288,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    *  2. --reranking flag in status.args
    *  3. HuggingFace API pipeline_tag (via --hf-repo in status.args)
    *  4. Model name heuristics
-   *  5. Default: chat
+   *  5. Default: chat.
    *
    * @param array $model
    *   A model entry from the /v1/models response.

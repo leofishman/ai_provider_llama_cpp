@@ -1,0 +1,33 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "bartowski",
+    "DDEV",
+    "drush",
+    "embeddings",
+    "gpustack",
+    "GGUF",
+    "gguf",
+    "hf",
+    "HuggingFace",
+    "huggingface",
+    "leofishman",
+    "llama",
+    "llamacpp",
+    "nomic",
+    "phpcs",
+    "phpstan",
+    "rerank",
+    "reranker",
+    "reranking",
+    "Rerank",
+    "smollm",
+    "Smol",
+    "unsloth",
+    "vosk",
+    "whisper",
+    "LANGCODE",
+    "minilm"
+  ]
+}

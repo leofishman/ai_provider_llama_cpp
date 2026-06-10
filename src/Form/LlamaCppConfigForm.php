@@ -133,8 +133,13 @@ class LlamaCppConfigForm extends ConfigFormBase {
     }
 
     $overrides = $this->state->get('ai_provider_llama_cpp.model_overrides', []);
-    $detected  = $this->state->get('ai_provider_llama_cpp.model_types', []);
-    $type_options = array_map(fn($label) => $this->t($label), self::OPERATION_TYPE_LABELS);
+    $detected = $this->state->get('ai_provider_llama_cpp.model_types', []);
+    $type_options = [
+      'chat'           => $this->t('Chat'),
+      'embeddings'     => $this->t('Embeddings'),
+      'speech_to_text' => $this->t('Speech to Text'),
+      'rerank'         => $this->t('Rerank'),
+    ];
 
     foreach ($all_models as $machine_id => $raw_id) {
       $auto_types = $detected[$machine_id] ?? ['chat'];
