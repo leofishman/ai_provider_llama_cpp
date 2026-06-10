@@ -9,5 +9,9 @@
  * Implements hook_uninstall().
  */
 function ai_provider_llama_cpp_uninstall() {
-  \Drupal::state()->delete('ai_provider_llama_cpp.models');
+  $state = \Drupal::state();
+  $state->delete('ai_provider_llama_cpp.models');
+  $state->delete('ai_provider_llama_cpp.model_types');
+  $state->delete('ai_provider_llama_cpp.model_overrides');
+  $state->delete('ai_provider_llama_cpp.hf_tag_cache');
 }
