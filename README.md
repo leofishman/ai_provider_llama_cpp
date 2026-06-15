@@ -84,13 +84,41 @@ llama-server \
   --host 0.0.0.0 \
   --port 8080 \
   --models-dir ~/.cache/huggingface/hub/ \
-  --models-preset ~/.config/llama-models.ini \
-  --models-max 1
+  --models-preset ~/.config/llama-models.ini
 ```
 
+## Using with Ollama
+
+Since [Ollama](https://ollama.com/) is a wrapper around llama.cpp and provides a compatible `/v1` HTTP API, you can use this module to connect to an Ollama server instead of `ai_provider_ollama`!
+
+This module has an advantage: it allows you to **manually override operation types** for specific models (such as configuring a fine-tuned model for `Speech to Text` or `Rerank`).
+
+To connect to Ollama, simply enter the following in the llama.cpp Configuration page:
+- **Host Name**: `http://127.0.0.1` (or your Ollama host IP)
+- **Port**: `11434` (Ollama's default port)
 The module detects each model's capabilities automatically from the
 `--embeddings` and `--reranking` flags. For models loaded via `--hf-repo`,
 it also queries the HuggingFace API to determine the model type.
+
+
+
+
+## Roadmap
+
+In future versions, we intend to support additional operation types such as:
+- **Image Generation** (`text_to_image`)
+- **Audio Generation** (`text_to_speech`)
+- **Moderation** (`moderation`)
+
+These will be added as `llama.cpp` upstream support for these operations matures.
+
+## Security Advisory Coverage
+
+If you are looking to get Security Advisory Coverage for a project:
+1. Ensure the project has a stable release (e.g., `1.0.0` or `1.1.0` - not alpha/beta).
+2. The maintainer must apply to become a vetted maintainer through the Drupal.org [Project Application Process](https://www.drupal.org/project/issues/project_applications). 
+3. After approval, you can opt the module into security advisory coverage on its project page.
+
 
 ## Maintainers
 
