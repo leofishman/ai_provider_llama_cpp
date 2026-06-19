@@ -20,7 +20,7 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 ## Requirements
 
-- Drupal 10.2 or 11
+- Drupal 10.2, 11 or 12.
 - [AI module](https://www.drupal.org/project/ai) ^1.2
 - A running `llama-server`, Ollama, vLLM, or other OpenAI-compatible API.
 
@@ -53,7 +53,7 @@ llama-server --model /path/to/model.gguf --port 8080
 ### Multi-model router (recommended)
 
 `llama-server` can manage multiple models and load/unload them on demand.
-Create a preset file (e.g. `~/.config/llama-models.ini`):
+Create a preset file and configure each model according to your hardware e.g with all layers loaded in gpu. `~/.config/llama-models.ini`):
 
 ```ini
 [my-chat-model]
@@ -84,12 +84,14 @@ llama-server \
   --port 8080 \
   --models-dir ~/.cache/huggingface/hub/ \
   --models-preset ~/.config/llama-models.ini \
-  --models-max 1
+  --models-max 3
 ```
 
 The module detects each model's capabilities automatically from the
 `--embeddings` and `--reranking` flags. For models loaded via `--hf-repo`,
 it also queries the HuggingFace API to determine the model type.
+
+For custom fine tuned models that have no flags or pipeline tags, you can use the model overrides in the config form to assign any operation type to any model.
 
 ## Maintainers
 
