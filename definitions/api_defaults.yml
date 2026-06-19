@@ -74,3 +74,10 @@ rerank:
     default: []
     required: true
   configuration: []
+moderation:
+  input:
+    description: 'Text to check for content policy violations.'
+    type: 'string'
+    default: 'Is this content safe?'
+    required: true
+  configuration: []

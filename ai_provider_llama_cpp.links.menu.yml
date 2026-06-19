@@ -1,5 +1,5 @@
 ai_provider_llama_cpp.settings_menu:
-  title: 'llama.cpp Configuration'
-  description: 'Setup llama.cpp'
-  route_name: ai_provider_llama_cpp.settings_form
+  title: 'llama.cpp Servers'
+  description: 'Manage OpenAI-compatible server instances.'
+  route_name: entity.llama_cpp_server.collection
   parent: ai.admin_providers

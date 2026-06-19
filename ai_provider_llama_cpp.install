@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install file for the llama.cpp provider module.
+ * Install, update, and uninstall functions for the llama.cpp provider module.
  */
 
 /**
@@ -10,8 +10,88 @@
  */
 function ai_provider_llama_cpp_uninstall() {
   $state = \Drupal::state();
+
+  // Clean up per-server state keys.
+  $servers = \Drupal::entityTypeManager()
+    ->getStorage('llama_cpp_server')
+    ->loadMultiple();
+  foreach ($servers as $server) {
+    $prefix = 'ai_provider_llama_cpp.server.' . $server->id();
+    $state->delete("{$prefix}.models");
+    $state->delete("{$prefix}.model_types");
+    $state->delete("{$prefix}.model_overrides");
+  }
+
+  // Clean up legacy state keys (pre-1.2.x).
   $state->delete('ai_provider_llama_cpp.models');
   $state->delete('ai_provider_llama_cpp.model_types');
   $state->delete('ai_provider_llama_cpp.model_overrides');
   $state->delete('ai_provider_llama_cpp.hf_tag_cache');
+}
+
+/**
+ * Migrate single-server config to multi-server config entities.
+ */
+function ai_provider_llama_cpp_update_10201() {
+  $config_factory = \Drupal::configFactory();
+  $config = $config_factory->get('ai_provider_llama_cpp.settings');
+
+  $host = $config->get('host_name');
+  $port = $config->get('port');
+
+  if (!$host) {
+    // Nothing to migrate.
+    return t('No existing server configuration found. Skipping migration.');
+  }
+
+  // Create a "default" config entity with the existing values.
+  $storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_server');
+
+  // Avoid collision if re-running.
+  if ($storage->load('default')) {
+    return t('Server "default" already exists. Skipping migration.');
+  }
+
+  $server = $storage->create([
+    'id' => 'default',
+    'label' => 'llama.cpp (migrated)',
+    'host_name' => $host,
+    'port' => $port ?: '8080',
+    'api_key' => '',
+    'timeout' => 600,
+    'operation_types' => [],
+  ]);
+  $server->save();
+
+  // Migrate state keys to per-server namespace.
+  $state = \Drupal::state();
+  $keys = ['models', 'model_types', 'model_overrides'];
+  foreach ($keys as $key) {
+    $old_key = "ai_provider_llama_cpp.{$key}";
+    $new_key = "ai_provider_llama_cpp.server.default.{$key}";
+    $value = $state->get($old_key);
+    if ($value !== NULL) {
+      $state->set($new_key, $value);
+      $state->delete($old_key);
+    }
+  }
+
+  // Update AI module default_providers: llama_cpp → llama_cpp:default.
+  $ai_config = $config_factory->getEditable('ai.settings');
+  $defaults = $ai_config->get('default_providers') ?? [];
+  $changed = FALSE;
+  foreach ($defaults as $op_type => $provider_info) {
+    if (($provider_info['provider_id'] ?? '') === 'llama_cpp') {
+      $defaults[$op_type]['provider_id'] = 'llama_cpp:default';
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $ai_config->set('default_providers', $defaults)->save();
+  }
+
+  // Delete the old simple config.
+  $config_factory->getEditable('ai_provider_llama_cpp.settings')->delete();
+
+  return t('Migrated server configuration to entity "default" (llama_cpp:default).');
 }

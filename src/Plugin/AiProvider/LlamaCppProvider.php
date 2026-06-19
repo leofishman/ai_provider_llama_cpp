@@ -5,16 +5,24 @@ namespace Drupal\ai_provider_llama_cpp\Plugin\AiProvider;
 use Drupal\ai\Attribute\AiProvider;
 use Drupal\ai\Base\OpenAiBasedProviderClientBase;
 use Drupal\ai\Exception\AiRequestErrorException;
-use Drupal\ai\OperationType\Rerank\ReRankInput;
-use Drupal\ai\OperationType\Rerank\ReRankInterface;
-use Drupal\ai\OperationType\Rerank\ReRankOutput;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Embeddings\EmbeddingsInput;
 use Drupal\ai\OperationType\Embeddings\EmbeddingsOutput;
+use Drupal\ai\OperationType\Moderation\ModerationInput;
+use Drupal\ai\OperationType\Moderation\ModerationInterface;
+use Drupal\ai\OperationType\Moderation\ModerationOutput;
+use Drupal\ai\OperationType\Moderation\ModerationResponse;
+use Drupal\ai\OperationType\Rerank\ReRankInput;
+use Drupal\ai\OperationType\Rerank\ReRankInterface;
+use Drupal\ai\OperationType\Rerank\ReRankOutput;
 use Drupal\ai\OperationType\SpeechToText\SpeechToTextInput;
 use Drupal\ai\OperationType\SpeechToText\SpeechToTextOutput;
 use Drupal\ai\Traits\OperationType\ChatTrait;
+use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
+use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
+use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
+use Drupal\ai_provider_llama_cpp\Plugin\Derivative\LlamaCppProviderDeriver;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -24,21 +32,26 @@ use GuzzleHttp\Client as GuzzleClient;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Plugin implementation for llama.cpp OpenAI-compatible servers.
+ * Plugin implementation for OpenAI-compatible servers.
+ *
+ * Each configured server entity produces a derived plugin instance
+ * (e.g. "llama_cpp:my_server") that appears as an individual provider
+ * within the AI module.
  */
 #[AiProvider(
   id: 'llama_cpp',
   label: new TranslatableMarkup('llama.cpp (OpenAI-compatible)'),
+  deriver: LlamaCppProviderDeriver::class,
 )]
-class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface {
+class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface, ModerationInterface {
 
   use StringTranslationTrait;
   use ChatTrait;
 
   /**
-   * Operation types detectable from llama.cpp server metadata or HF API.
+   * All operation types this provider can support.
    */
-  const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank'];
+  const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank', 'moderation'];
 
   /**
    * Map from HuggingFace pipeline_tag to Drupal AI operation type id.
@@ -52,6 +65,17 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     'text-to-speech'                => 'text_to_speech',
     'text-to-image'                 => 'text_to_image',
     'text-ranking'                  => 'rerank',
+  ];
+
+  /**
+   * Map from moderation model name patterns to parser classes.
+   */
+  const MODERATION_PARSERS = [
+    'llama-guard3' => LlamaGuard3::class,
+    'llamaguard'   => LlamaGuard3::class,
+    'llama_guard'  => LlamaGuard3::class,
+    'shieldgemma'  => ShieldGemma::class,
+    'shield_gemma' => ShieldGemma::class,
   ];
 
   /**
@@ -76,6 +100,13 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   protected array $models = [];
 
   /**
+   * Cached server entity.
+   *
+   * @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface|null|false
+   */
+  protected LlamaCppServerInterface|null|false $serverEntity = FALSE;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
@@ -83,6 +114,41 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $instance->state = $container->get('state');
     $instance->transliteration = $container->get('transliteration');
     return $instance;
+  }
+
+  /**
+   * Gets the server config entity for this derived plugin instance.
+   *
+   * @return \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface|null
+   *   The server entity, or NULL for non-derived usage.
+   */
+  protected function getServerEntity(): ?LlamaCppServerInterface {
+    if ($this->serverEntity === FALSE) {
+      $derivative_id = $this->getDerivativeId();
+      if ($derivative_id) {
+        $this->serverEntity = \Drupal::entityTypeManager()
+          ->getStorage('llama_cpp_server')
+          ->load($derivative_id);
+      }
+      else {
+        $this->serverEntity = NULL;
+      }
+    }
+    return $this->serverEntity;
+  }
+
+  /**
+   * Returns the State key prefix for this server instance.
+   *
+   * @return string
+   *   A prefix like "ai_provider_llama_cpp.server.my_server".
+   */
+  protected function getStateKeyPrefix(): string {
+    $derivative_id = $this->getDerivativeId();
+    if ($derivative_id) {
+      return "ai_provider_llama_cpp.server.{$derivative_id}";
+    }
+    return 'ai_provider_llama_cpp';
   }
 
   /**
@@ -102,7 +168,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function hasAuthentication(): bool {
-    return FALSE;
+    $server = $this->getServerEntity();
+    return $server && !empty($server->getApiKey());
   }
 
   /**
@@ -116,6 +183,13 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function getSupportedOperationTypes(): array {
+    $server = $this->getServerEntity();
+    if ($server) {
+      $types = $server->getOperationTypes();
+      if (!empty($types)) {
+        return $types;
+      }
+    }
     return self::SUPPORTED_OPERATION_TYPES;
   }
 
@@ -133,10 +207,23 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     if (empty($this->client)) {
       $host = $this->getBaseHost();
       if (!$host) {
-        throw new AiRequestErrorException('llama.cpp host is not configured.');
+        throw new AiRequestErrorException('Server host is not configured.');
       }
       $this->setEndpoint(rtrim($host, '/') . '/v1');
-      $this->setHttpClient(new GuzzleClient(['timeout' => 600]));
+
+      $timeout = 600;
+      $server = $this->getServerEntity();
+      if ($server) {
+        $timeout = $server->getTimeout() ?: 600;
+        $api_key = $server->getApiKey();
+        if ($api_key) {
+          // Set API key in configuration so the base class picks it up.
+          $this->configuration['api_key'] = $api_key;
+        }
+      }
+      $timeout = $this->configuration['timeout'] ?? $timeout;
+
+      $this->setHttpClient(new GuzzleClient(['timeout' => $timeout]));
       $this->client = $this->createClient();
     }
   }
@@ -151,13 +238,14 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
     catch (\Throwable $e) {
       $this->loggerFactory->get('ai_provider_llama_cpp')->error(
-        'Failed to get models from llama.cpp: @message',
+        'Failed to get models from server: @message',
         ['@message' => $e->getMessage()]
       );
       return $this->getFallbackModels($operation_type);
     }
 
-    $overrides = $this->state->get('ai_provider_llama_cpp.model_overrides', []);
+    $prefix = $this->getStateKeyPrefix();
+    $overrides = $this->state->get("{$prefix}.model_overrides", []);
     $all_models = [];
     $all_types = [];
     $filtered = [];
@@ -177,8 +265,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     $this->models = $all_models;
-    $this->state->set('ai_provider_llama_cpp.models', $all_models);
-    $this->state->set('ai_provider_llama_cpp.model_types', $all_types);
+    $this->state->set("{$prefix}.models", $all_models);
+    $this->state->set("{$prefix}.model_types", $all_types);
 
     return $filtered;
   }
@@ -224,10 +312,20 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     try {
-      $http = new GuzzleClient(['timeout' => 600]);
-      $response = $http->request('POST', rtrim($this->getBaseHost(), '/') . '/v1/rerank', [
-        'json' => $payload,
-      ]);
+      $timeout = 600;
+      $server = $this->getServerEntity();
+      if ($server) {
+        $timeout = $server->getTimeout() ?: 600;
+      }
+      $options = ['timeout' => $timeout, 'json' => $payload];
+
+      $api_key = $server?->getApiKey();
+      if ($api_key) {
+        $options['headers'] = ['Authorization' => 'Bearer ' . $api_key];
+      }
+
+      $http = new GuzzleClient($options);
+      $response = $http->request('POST', rtrim($this->getBaseHost(), '/') . '/v1/rerank');
       $data = json_decode($response->getBody()->getContents(), TRUE);
     }
     catch (\Throwable $e) {
@@ -240,6 +338,61 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $data['id'] ?? '',
       $data,
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function moderation(string|ModerationInput $input, ?string $model_id = NULL, array $tags = []): ModerationOutput {
+    $this->loadClient();
+
+    $prompt = $input instanceof ModerationInput ? $input->getPrompt() : $input;
+    $raw_model_id = $this->getModel($model_id);
+
+    $payload = [
+      'model' => $raw_model_id,
+      'messages' => [
+        ['role' => 'user', 'content' => $prompt],
+      ],
+    ] + $this->configuration;
+
+    $response = $this->client->chat()->create($payload)->toArray();
+    if (!isset($response['choices'][0]['message']['content'])) {
+      throw new AiRequestErrorException('No content in moderation response.');
+    }
+    $message = $response['choices'][0]['message']['content'];
+
+    // Find the right parser for this model.
+    $parser_class = $this->getModerationParser($raw_model_id);
+    if ($parser_class) {
+      $moderation_response = $parser_class::parse($message);
+    }
+    else {
+      // Unknown moderation model: flag if output contains "unsafe".
+      $flagged = str_contains(strtolower($message), 'unsafe');
+      $moderation_response = new ModerationResponse($flagged);
+    }
+
+    return new ModerationOutput($moderation_response, $message, $response);
+  }
+
+  /**
+   * Finds the moderation parser class for a model ID.
+   *
+   * @param string $model_id
+   *   The raw model ID.
+   *
+   * @return string|null
+   *   The parser class FQCN, or NULL if unknown.
+   */
+  protected function getModerationParser(string $model_id): ?string {
+    $name = strtolower($model_id);
+    foreach (self::MODERATION_PARSERS as $pattern => $class) {
+      if (str_contains($name, $pattern)) {
+        return $class;
+      }
+    }
+    return NULL;
   }
 
   /**
@@ -270,7 +423,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Tests connectivity to the llama.cpp server.
+   * Tests connectivity to the server.
    *
    * @throws \Drupal\ai\Exception\AiRequestErrorException
    *   If the server is unreachable or not configured.
@@ -320,6 +473,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
     if (preg_match('/rerank/', $name)) {
       return ['rerank'];
+    }
+    if (preg_match('/llama.guard|llamaguard|shield.?gemma/', $name)) {
+      return ['moderation'];
     }
     if (preg_match('/embed|bge[-_]|nomic|e5[-_]|gte[-_]|minilm/', $name)) {
       return ['embeddings'];
@@ -387,12 +543,13 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    *   Machine-safe model IDs mapped to raw model IDs.
    */
   protected function getFallbackModels(?string $operation_type): array {
-    $this->models = $this->state->get('ai_provider_llama_cpp.models', []);
+    $prefix = $this->getStateKeyPrefix();
+    $this->models = $this->state->get("{$prefix}.models", []);
     if ($operation_type === NULL) {
       return $this->models;
     }
-    $types = $this->state->get('ai_provider_llama_cpp.model_types', []);
-    $overrides = $this->state->get('ai_provider_llama_cpp.model_overrides', []);
+    $types = $this->state->get("{$prefix}.model_types", []);
+    $overrides = $this->state->get("{$prefix}.model_overrides", []);
     return array_filter(
       $this->models,
       function ($raw_id, $machine_id) use ($operation_type, $types, $overrides): bool {
@@ -410,11 +567,12 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    *   The machine-safe model id.
    *
    * @return string
-   *   The raw llama.cpp model id.
+   *   The raw model id.
    */
   protected function getModel(string $model_id): string {
     if (empty($this->models)) {
-      $this->models = $this->state->get('ai_provider_llama_cpp.models', []);
+      $prefix = $this->getStateKeyPrefix();
+      $this->models = $this->state->get("{$prefix}.models", []);
     }
     return $this->models[$model_id] ?? $model_id;
   }
@@ -435,15 +593,25 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Gets the host configured for llama.cpp.
+   * Gets the base host URL for the server.
+   *
+   * Reads from the config entity when available (derived instance),
+   * or from runtime configuration (form validation / temporary instances).
    *
    * @return string
    *   The base host URL.
    */
   protected function getBaseHost(): string {
-    $host = $this->configuration['host_name'] ?? $this->getConfig()->get('host_name');
-    $host = rtrim((string) $host, '/');
-    $port = $this->configuration['port'] ?? $this->getConfig()->get('port');
+    $server = $this->getServerEntity();
+    if ($server) {
+      $host = rtrim((string) $server->getHostName(), '/');
+      $port = $server->getPort();
+    }
+    else {
+      // Fallback: runtime configuration (e.g. form validation).
+      $host = rtrim((string) ($this->configuration['host_name'] ?? $this->getConfig()->get('host_name') ?? ''), '/');
+      $port = $this->configuration['port'] ?? $this->getConfig()->get('port') ?? '';
+    }
     if ($port) {
       $host .= ':' . $port;
     }

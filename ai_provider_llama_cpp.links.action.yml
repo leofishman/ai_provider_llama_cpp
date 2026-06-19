@@ -1,0 +1,5 @@
+entity.llama_cpp_server.add_form:
+  route_name: entity.llama_cpp_server.add_form
+  title: 'Add server'
+  appears_on:
+    - entity.llama_cpp_server.collection
