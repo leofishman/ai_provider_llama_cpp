@@ -1,31 +1,28 @@
-# AI Provider: llama.cpp
+# AI Provider: llama.cpp (Multi-instance)
 
-Provides a [llama.cpp](https://github.com/ggml-org/llama.cpp) provider for the
-[AI module](https://www.drupal.org/project/ai) using the OpenAI-compatible
-`/v1` HTTP API exposed by `llama-server`.
+A powerful, multi-instance provider for the [AI module](https://www.drupal.org/project/ai).
+While built with [llama.cpp](https://github.com/ggml-org/llama.cpp) as its primary focus, 
+it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, vLLM, LiteLLM, LM Studio).
 
 ## Features
 
-- **Chat** completions (`/v1/chat/completions`)
-- **Embeddings** (`/v1/embeddings`)
-- **Speech to Text** transcription via Whisper models (`/v1/audio/transcriptions`)
-- **Rerank** (`/v1/rerank`)
-- **Automatic operation type detection** — the provider reads each model's
-  server metadata to determine its capabilities without manual configuration:
-  1. `--embeddings` / `--reranking` flags in the server's model args
-  2. HuggingFace API `pipeline_tag` (when the model was loaded via `--hf-repo`)
-  3. Model name heuristics (e.g. `whisper`, `embed`, `rerank`)
-- **Manual capability overrides** — the settings form lets you assign any
-  operation type to any model, overriding auto-detection
-- Model list and detected types cached in Drupal State for resilience when
-  the server is offline
-- No API key required — designed for local and self-hosted deployments
+- **Multi-instance Architecture**: Configure multiple servers simultaneously (e.g. a GPU server for chat, a local instance for embeddings, and an Ollama instance for moderation). Each server appears as an independent provider in Drupal.
+- **Supported Operations**:
+  - **Chat** completions (`/v1/chat/completions`)
+  - **Embeddings** (`/v1/embeddings`)
+  - **Speech to Text** transcription via Whisper models (`/v1/audio/transcriptions`)
+  - **Rerank** (`/v1/rerank`)
+  - **Moderation** (native support for LlamaGuard3 and ShieldGemma)
+- **Smart Auto-detection**: Reads server metadata to automatically determine model capabilities via CLI flags, HuggingFace API `pipeline_tag`, and intelligent name heuristics.
+- **Manual Capability Overrides**: Assign any operation type to any model per-server to override auto-detection.
+- **Robust Caching**: Model lists and detected capabilities are cached in Drupal State for resilience.
+- **Flexible Connection**: Configurable timeout per-server and optional API key support (for authenticated instances like vLLM).
 
 ## Requirements
 
 - Drupal 10.2 or 11
 - [AI module](https://www.drupal.org/project/ai) ^1.2
-- A running `llama-server` instance (default port: 8080)
+- A running `llama-server`, Ollama, vLLM, or other OpenAI-compatible API.
 
 ## Installation
 
@@ -36,12 +33,14 @@ drush pm:enable ai_provider_llama_cpp
 
 ## Configuration
 
-Navigate to **Administration → Configuration → AI → llama.cpp Configuration**
-(`/admin/config/ai/providers/llama-cpp`) and enter:
+Navigate to **Administration → Configuration → AI → llama.cpp Servers**
+(`/admin/config/ai/providers/llama-cpp`). From here you can add and manage multiple server instances. 
 
-- **Host Name** — protocol + hostname, e.g. `http://127.0.0.1` or
-  `http://host.docker.internal` for DDEV/Docker environments.
-- **Port** — defaults to `8080`.
+For each server, you can configure:
+- **Host Name & Port** — e.g. `http://127.0.0.1:8080`, or `http://host.docker.internal` for DDEV.
+- **API Key** — Optional, required if your server enforces authentication.
+- **Timeout** — Configurable per-server (defaults to 600s).
+- **Operation Types & Model Overrides** — Assign specific roles to the server or manually override auto-detected capabilities per model.
 
 ## Running llama-server
 
