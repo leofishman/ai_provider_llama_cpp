@@ -13,7 +13,7 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
   - **Speech to Text** transcription via Whisper models (`/v1/audio/transcriptions`)
   - **Rerank** (`/v1/rerank`)
   - **Moderation** (native support for LlamaGuard3 and ShieldGemma).  
-    ShieldGemma needs a specially formatted prompt with a safety "guideline". The module detects it and switches to `/v1/completions` + full prompt instead of chat. Simple single-call implementation.
+    ShieldGemma's chat template requires a safety "guideline", so the module builds the full prompt and calls `/v1/completions` directly. It checks the content against ShieldGemma's four official safety policies (harassment, hate speech, dangerous content, sexually explicit) and flags it if any is violated.
   - **Text to Image** generation (`/v1/images/generations` - e.g. via LiteLLM/OpenRouter)
 - **Model Filtering**: Allow or restrict models per server using clean glob patterns (e.g. `llama3*, !*old*`).
 - **Smart Auto-detection**: Reads server metadata to automatically determine model capabilities via CLI flags, HuggingFace API `pipeline_tag`, and intelligent name heuristics.
@@ -29,6 +29,10 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
   1. **Views Integration**: Expose discovered models and overrides as editable/filterable Views.
   2. **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
   3. **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
+
+- **Configurable & extensible moderation policies**:
+  - Make ShieldGemma's safety guidelines configurable per server, instead of the four hardcoded official policies (same pattern as `model_filter`).
+  - Dispatch an event (e.g. `ModerationGuidelinesEvent`) so other modules can add or alter guidelines, with content/model/server context. Note: ShieldGemma is trained on its four official categories, so custom guidelines are less reliable.
 
 - **Improved test coverage**:
   - Expand Kernel tests for model discovery, filtering, moderation parsers, rerank, and text-to-image paths.

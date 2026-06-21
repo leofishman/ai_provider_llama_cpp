@@ -544,7 +544,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
         return $class;
       }
     }
-    // Extra robustness for ShieldGemma (covers shield-gemma, shield_gemma, shieldgemma etc.)
+    // Fallback for ShieldGemma id variants (shield-gemma, shield_gemma).
     if (preg_match('/shield.?gemma/', $name)) {
       return ShieldGemma::class;
     }
