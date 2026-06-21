@@ -4,9 +4,10 @@ namespace Drupal\ai_provider_llama_cpp\Form;
 
 use Drupal\Core\Entity\EntityForm;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Http\ClientFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\ai\AiProviderPluginManager;
-use GuzzleHttp\Client as GuzzleClient;
+use Drupal\key\KeyRepositoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -32,6 +33,8 @@ class LlamaCppServerForm extends EntityForm {
   public function __construct(
     protected AiProviderPluginManager $aiProviderManager,
     protected StateInterface $state,
+    protected KeyRepositoryInterface $keyRepository,
+    protected ClientFactory $httpClientFactory,
   ) {}
 
   /**
@@ -41,6 +44,8 @@ class LlamaCppServerForm extends EntityForm {
     return new static(
       $container->get('ai.provider'),
       $container->get('state'),
+      $container->get('key.repository'),
+      $container->get('http_client_factory'),
     );
   }
 
@@ -94,11 +99,10 @@ class LlamaCppServerForm extends EntityForm {
     ];
 
     $form['connection']['api_key'] = [
-      '#type' => 'textfield',
+      '#type' => 'key_select',
       '#title' => $this->t('API Key'),
-      '#description' => $this->t('Optional. Required for servers with authentication (e.g. vLLM, LiteLLM).'),
+      '#description' => $this->t('Optional. Select a Key for authenticated servers (e.g. vLLM, LiteLLM). Leave empty for local llama.cpp servers without authentication.'),
       '#default_value' => $server->getApiKey(),
-      '#attributes' => ['autocomplete' => 'off'],
     ];
 
     $form['connection']['timeout'] = [
@@ -124,7 +128,6 @@ class LlamaCppServerForm extends EntityForm {
       '#attributes' => ['placeholder' => 'llama3*, *mistral*, !*old*'],
       '#parents' => ['model_filter'],
     ];
-
 
     $form['operation_types'] = [
       '#type' => 'checkboxes',
@@ -206,24 +209,21 @@ class LlamaCppServerForm extends EntityForm {
       $host .= ':' . $port;
     }
 
-    // Test connection to the server.
     try {
       $options = [
-        'timeout' => 10,
         'connect_timeout' => 5,
       ];
 
-      $api_key = $form_state->getValue('api_key');
-      $headers = [];
-      if ($api_key) {
-        $headers['Authorization'] = 'Bearer ' . $api_key;
-      }
-      if (!empty($headers)) {
-        $options['headers'] = $headers;
+      $key_id = $form_state->getValue('api_key');
+      if ($key_id) {
+        $api_key = $this->keyRepository->getKey($key_id)?->getKeyValue();
+        if ($api_key) {
+          $options['headers'] = ['Authorization' => 'Bearer ' . $api_key];
+        }
       }
 
-      $client = new GuzzleClient($options);
-      $client->request('GET', rtrim($host, '/') . '/v1/models');
+      $client = $this->httpClientFactory->fromOptions(['timeout' => 10]);
+      $client->request('GET', rtrim($host, '/') . '/v1/models', $options);
     }
     catch (\Exception) {
       $form_state->setErrorByName('host_name', $this->t('Could not connect to the server. Check the host, port, and API key.'));

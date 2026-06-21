@@ -1,7 +1,9 @@
 name: 'llama.cpp'
 type: module
-description: 'Multi-instance AI provider for llama.cpp and OpenAI-compatible servers. Supports chat, embeddings, speech-to-text, rerank, and moderation.'
+description: 'Multi-instance AI provider for llama.cpp and OpenAI-compatible servers. Supports chat, embeddings, speech-to-text, rerank, moderation, and text-to-image.'
 core_version_requirement: ^10.2 || ^11 || ^12
 package: AI Providers
-dependencies: [ai]
+dependencies:
+  - ai:ai
+  - key:key
 configure: entity.llama_cpp_server.collection

@@ -5,6 +5,7 @@ namespace Drupal\ai_provider_llama_cpp\Plugin\AiProvider;
 use Drupal\ai\Attribute\AiProvider;
 use Drupal\ai\Base\OpenAiBasedProviderClientBase;
 use Drupal\ai\Exception\AiRequestErrorException;
+use Drupal\ai\Exception\AiSetupFailureException;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Embeddings\EmbeddingsInput;
@@ -26,12 +27,15 @@ use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
 use Drupal\ai_provider_llama_cpp\Plugin\Derivative\LlamaCppProviderDeriver;
+use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
+use Drupal\Component\Transliteration\TransliterationInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Http\ClientFactory;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\Component\Transliteration\TransliterationInterface;
-use GuzzleHttp\Client as GuzzleClient;
+use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -48,7 +52,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 )]
 class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface, ModerationInterface, TextToImageInterface {
 
-
   use StringTranslationTrait;
   use ChatTrait;
 
@@ -56,7 +59,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * All operation types this provider can support.
    */
   const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank', 'moderation', 'text_to_image'];
-
 
   /**
    * Map from HuggingFace pipeline_tag to Drupal AI operation type id.
@@ -98,6 +100,20 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   protected TransliterationInterface $transliteration;
 
   /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * The HTTP client factory.
+   *
+   * @var \Drupal\Core\Http\ClientFactory
+   */
+  protected ClientFactory $httpClientFactory;
+
+  /**
    * Cached model mapping (machine_id => raw_id).
    *
    * @var array
@@ -118,6 +134,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->state = $container->get('state');
     $instance->transliteration = $container->get('transliteration');
+    $instance->entityTypeManager = $container->get('entity_type.manager');
+    $instance->httpClientFactory = $container->get('http_client_factory');
     return $instance;
   }
 
@@ -131,7 +149,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     if ($this->serverEntity === FALSE) {
       $derivative_id = $this->getDerivativeId();
       if ($derivative_id) {
-        $this->serverEntity = \Drupal::entityTypeManager()
+        $this->serverEntity = $this->entityTypeManager
           ->getStorage('llama_cpp_server')
           ->load($derivative_id);
       }
@@ -181,7 +199,36 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function setAuthentication(mixed $authentication): void {
+    parent::setAuthentication($authentication);
     $this->client = NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function loadApiKey(): string {
+    $server = $this->getServerEntity();
+    $key_id = $server?->getApiKey() ?? '';
+    if ($key_id === '') {
+      throw new AiSetupFailureException(
+        sprintf(
+          'Could not load the %s API key, please check your environment settings or your setup key.',
+          $this->getPluginDefinition()['label']
+        ),
+      );
+    }
+
+    $api_key = $this->keyRepository->getKey($key_id)?->getKeyValue();
+    if (empty($api_key)) {
+      throw new AiSetupFailureException(
+        sprintf(
+          'Could not load the %s API key, please check your environment settings or your setup key.',
+          $this->getPluginDefinition()['label']
+        ),
+      );
+    }
+
+    return $api_key;
   }
 
   /**
@@ -220,15 +267,10 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $server = $this->getServerEntity();
       if ($server) {
         $timeout = $server->getTimeout() ?: 600;
-        $api_key = $server->getApiKey();
-        if ($api_key) {
-          // Set API key in configuration so the base class picks it up.
-          $this->configuration['api_key'] = $api_key;
-        }
       }
       $timeout = $this->configuration['timeout'] ?? $timeout;
 
-      $this->setHttpClient(new GuzzleClient(['timeout' => $timeout]));
+      $this->setHttpClient($this->httpClientFactory->fromOptions(['timeout' => $timeout]));
       $this->client = $this->createClient();
     }
   }
@@ -266,7 +308,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $all_models[$machine_id] = $raw_id;
       $all_types[$machine_id] = $detected;
 
-      if ($filter_pattern !== '' && !$this->matchesFilterPattern($raw_id, $filter_pattern)) {
+      if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
         continue;
       }
 
@@ -281,7 +323,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $this->state->set("{$prefix}.model_types", $all_types);
 
     return $filtered;
-
   }
 
   /**
@@ -330,15 +371,18 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       if ($server) {
         $timeout = $server->getTimeout() ?: 600;
       }
-      $options = ['timeout' => $timeout, 'json' => $payload];
 
-      $api_key = $server?->getApiKey();
-      if ($api_key) {
-        $options['headers'] = ['Authorization' => 'Bearer ' . $api_key];
+      $options = ['json' => $payload];
+      if ($this->hasAuthentication()) {
+        $options['headers'] = ['Authorization' => 'Bearer ' . $this->loadApiKey()];
       }
 
-      $http = new GuzzleClient($options);
-      $response = $http->request('POST', rtrim($this->getBaseHost(), '/') . '/v1/rerank');
+      $response = $this->httpRequest(
+        'POST',
+        rtrim($this->getBaseHost(), '/') . '/v1/rerank',
+        $options,
+        $timeout,
+      );
       $data = json_decode($response->getBody()->getContents(), TRUE);
     }
     catch (\Throwable $e) {
@@ -375,13 +419,11 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
     $message = $response['choices'][0]['message']['content'];
 
-    // Find the right parser for this model.
     $parser_class = $this->getModerationParser($raw_model_id);
     if ($parser_class) {
       $moderation_response = $parser_class::parse($message);
     }
     else {
-      // Unknown moderation model: flag if output contains "unsafe".
       $flagged = str_contains(strtolower($message), 'unsafe');
       $moderation_response = new ModerationResponse($flagged);
     }
@@ -498,7 +540,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     return ['chat'];
-
   }
 
   /**
@@ -515,7 +556,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     if ($index === FALSE || !isset($args[$index + 1])) {
       return NULL;
     }
-    // Strip quantization tag: "owner/repo:Q4_K_M" → "owner/repo".
     return explode(':', $args[$index + 1])[0];
   }
 
@@ -535,8 +575,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     try {
-      $http = new GuzzleClient(['timeout' => 5]);
-      $response = $http->request('GET', "https://huggingface.co/api/models/{$repo}");
+      $response = $this->httpRequest('GET', "https://huggingface.co/api/models/{$repo}", [], 5);
       $data = json_decode($response->getBody()->getContents(), TRUE);
       $tag = $data['pipeline_tag'] ?? NULL;
     }
@@ -551,6 +590,14 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
+   * Returns models from State cache, filtered by operation type if given.
+   *
+   * @param string|null $operation_type
+   *   Operation type to filter by, or NULL for all models.
+   *
+   * @return array
+   *   Machine-safe model IDs mapped to raw model IDs.
+   */
   protected function getFallbackModels(?string $operation_type): array {
     $prefix = $this->getStateKeyPrefix();
     $this->models = $this->state->get("{$prefix}.models", []);
@@ -562,7 +609,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     if ($filter_pattern !== '') {
       $filtered = array_filter(
         $filtered,
-        fn($raw_id) => $this->matchesFilterPattern($raw_id, $filter_pattern)
+        fn($raw_id) => ModelFilter::matches($raw_id, $filter_pattern)
       );
     }
 
@@ -581,7 +628,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       ARRAY_FILTER_USE_BOTH,
     );
   }
-
 
   /**
    * Gets the raw model identifier from the stored mapping.
@@ -631,7 +677,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $port = $server->getPort();
     }
     else {
-      // Fallback: runtime configuration (e.g. form validation).
       $host = rtrim((string) ($this->configuration['host_name'] ?? $this->getConfig()->get('host_name') ?? ''), '/');
       $port = $this->configuration['port'] ?? $this->getConfig()->get('port') ?? '';
     }
@@ -650,76 +695,23 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Checks if a model ID matches a comma-separated filter pattern.
+   * Performs an HTTP request using Drupal's HTTP client factory.
    *
-   * @param string $model_id
-   *   The raw model ID.
-   * @param string $pattern_string
-   *   Comma-separated list of allowed/denied models.
+   * @param string $method
+   *   The HTTP method.
+   * @param string $uri
+   *   The request URI.
+   * @param array $options
+   *   Guzzle request options.
+   * @param int $timeout
+   *   Request timeout in seconds.
    *
-   * @return bool
-   *   TRUE if the model ID matches the filter, FALSE otherwise.
+   * @return \Psr\Http\Message\ResponseInterface
+   *   The HTTP response.
    */
-  protected function matchesFilterPattern(string $model_id, string $pattern_string): bool {
-    $pattern_string = trim($pattern_string);
-    if ($pattern_string === '') {
-      return TRUE;
-    }
-
-    $patterns = array_map('trim', explode(',', $pattern_string));
-    $patterns = array_filter($patterns);
-    if (empty($patterns)) {
-      return TRUE;
-    }
-
-    $include_patterns = [];
-    $exclude_patterns = [];
-
-    foreach ($patterns as $pattern) {
-      if (str_starts_with($pattern, '!')) {
-        $exclude_patterns[] = substr($pattern, 1);
-      }
-      else {
-        $include_patterns[] = $pattern;
-      }
-    }
-
-    // Check exclusions first.
-    foreach ($exclude_patterns as $pattern) {
-      if ($this->matchGlob($model_id, $pattern)) {
-        return FALSE;
-      }
-    }
-
-    // If there are inclusion patterns, at least one must match.
-    if (!empty($include_patterns)) {
-      foreach ($include_patterns as $pattern) {
-        if ($this->matchGlob($model_id, $pattern)) {
-          return TRUE;
-        }
-      }
-      return FALSE;
-    }
-
-    return TRUE;
-  }
-
-  /**
-   * Matches a string against a simple glob pattern (supporting wildcard *).
-   *
-   * @param string $string
-   *   The string to match.
-   * @param string $pattern
-   *   The glob pattern.
-   *
-   * @return bool
-   *   TRUE if matches, FALSE otherwise.
-   */
-  protected function matchGlob(string $string, string $pattern): bool {
-    $quoted = preg_quote($pattern, '/');
-    $regex = str_replace('\*', '.*', $quoted);
-    return (bool) preg_match('/^' . $regex . '$/i', $string);
+  protected function httpRequest(string $method, string $uri, array $options = [], int $timeout = 60): ResponseInterface {
+    $client = $this->httpClientFactory->fromOptions(['timeout' => $timeout]);
+    return $client->request($method, $uri, $options);
   }
 
 }
-

@@ -84,7 +84,7 @@ class LlamaCppServer extends ConfigEntityBase implements LlamaCppServerInterface
   protected string $port = '8080';
 
   /**
-   * Optional API key for authenticated servers.
+   * Optional Key entity ID for authenticated servers.
    *
    * @var string
    */
@@ -154,4 +154,3 @@ class LlamaCppServer extends ConfigEntityBase implements LlamaCppServerInterface
   }
 
 }
-

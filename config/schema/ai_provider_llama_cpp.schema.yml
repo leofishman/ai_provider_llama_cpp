@@ -1,3 +1,15 @@
+# Legacy single-server config (pre-1.2.x). Kept for update hook 10201 migration.
+ai_provider_llama_cpp.settings:
+  type: config_object
+  label: 'Legacy llama.cpp settings'
+  mapping:
+    host_name:
+      type: string
+      label: 'Host Name'
+    port:
+      type: string
+      label: 'Port'
+
 ai_provider_llama_cpp.server.*:
   type: config_entity
   label: 'OpenAI-compatible Server'
@@ -16,7 +28,7 @@ ai_provider_llama_cpp.server.*:
       label: 'Port'
     api_key:
       type: string
-      label: 'API Key'
+      label: 'API Key (Key entity ID)'
     timeout:
       type: integer
       label: 'Timeout'

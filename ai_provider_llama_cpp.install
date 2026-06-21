@@ -95,3 +95,47 @@ function ai_provider_llama_cpp_update_10201() {
 
   return t('Migrated server configuration to entity "default" (llama_cpp:default).');
 }
+
+/**
+ * Migrate plaintext API keys to Key module entities.
+ */
+function ai_provider_llama_cpp_update_10202() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $server_storage = $entity_type_manager->getStorage('llama_cpp_server');
+  $key_storage = $entity_type_manager->getStorage('key');
+  $migrated = 0;
+
+  foreach ($server_storage->loadMultiple() as $server) {
+    $api_key = $server->getApiKey();
+    if ($api_key === '') {
+      continue;
+    }
+
+    // Already references a Key entity.
+    if ($key_storage->load($api_key)) {
+      continue;
+    }
+
+    $key_id = 'llama_cpp_' . $server->id();
+    if (!$key_storage->load($key_id)) {
+      $key_storage->create([
+        'id' => $key_id,
+        'label' => 'llama.cpp: ' . $server->label(),
+        'key_type' => 'authentication',
+        'key_type_settings' => [],
+        'key_provider' => 'config',
+        'key_provider_settings' => [
+          'key_value' => $api_key,
+        ],
+        'key_input' => 'text_field',
+        'description' => 'Migrated from llama.cpp server configuration.',
+      ])->save();
+    }
+
+    $server->set('api_key', $key_id);
+    $server->save();
+    $migrated++;
+  }
+
+  return t('Migrated @count server API key(s) to Key entities.', ['@count' => $migrated]);
+}

@@ -20,7 +20,9 @@ interface LlamaCppServerInterface extends ConfigEntityInterface {
   public function getPort(): string;
 
   /**
-   * Gets the API key, if any.
+   * Gets the Key entity ID for API authentication, if any.
+   *
+   * Empty string means no authentication (e.g. local llama.cpp).
    */
   public function getApiKey(): string;
 
@@ -46,4 +48,3 @@ interface LlamaCppServerInterface extends ConfigEntityInterface {
   public function getModelFilter(): string;
 
 }
-
