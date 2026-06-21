@@ -12,7 +12,8 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
   - **Embeddings** (`/v1/embeddings`)
   - **Speech to Text** transcription via Whisper models (`/v1/audio/transcriptions`)
   - **Rerank** (`/v1/rerank`)
-  - **Moderation** (native support for LlamaGuard3 and ShieldGemma)
+  - **Moderation** (native support for LlamaGuard3 and ShieldGemma).  
+    ShieldGemma needs a specially formatted prompt with a safety "guideline". The module detects it and switches to `/v1/completions` + full prompt instead of chat. Simple single-call implementation.
   - **Text to Image** generation (`/v1/images/generations` - e.g. via LiteLLM/OpenRouter)
 - **Model Filtering**: Allow or restrict models per server using clean glob patterns (e.g. `llama3*, !*old*`).
 - **Smart Auto-detection**: Reads server metadata to automatically determine model capabilities via CLI flags, HuggingFace API `pipeline_tag`, and intelligent name heuristics.

@@ -83,6 +83,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     'llama_guard'  => LlamaGuard3::class,
     'shieldgemma'  => ShieldGemma::class,
     'shield_gemma' => ShieldGemma::class,
+    'shield-gemma' => ShieldGemma::class,
   ];
 
   /**
@@ -427,6 +428,75 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $prompt = $input instanceof ModerationInput ? $input->getPrompt() : $input;
     $raw_model_id = $this->getModel($model_id);
 
+    $parser_class = $this->getModerationParser($raw_model_id);
+
+    $is_shield = $parser_class === ShieldGemma::class
+      || preg_match('/shield.?gemma/', strtolower($raw_model_id));
+
+    // ShieldGemma's chat template requires a `guideline` variable, so a plain
+    // chat.completions call fails with "'guideline' is undefined". Instead we
+    // post a fully-built prompt to /v1/completions once per safety policy and
+    // flag the content if any policy is violated.
+    if ($is_shield) {
+      // Resolve the request timeout the same way as the other custom paths.
+      $timeout = 600;
+      $server = $this->getServerEntity();
+      if ($server) {
+        $timeout = $server->getTimeout() ?: 600;
+      }
+      $timeout = $this->configuration['timeout'] ?? $timeout;
+
+      $url = rtrim($this->getBaseHost(), '/') . '/v1/completions';
+      $headers = [];
+      if ($this->hasAuthentication()) {
+        $headers['Authorization'] = 'Bearer ' . $this->loadApiKey();
+      }
+
+      $flagged = FALSE;
+      $categories = [];
+      $raw_outputs = [];
+      foreach (ShieldGemma::getDefaultGuidelines() as $category => $guideline) {
+        $payload = [
+          'model'       => $raw_model_id,
+          'prompt'      => ShieldGemma::buildPrompt($prompt, $guideline),
+          'max_tokens'  => 4,
+          'temperature' => 0.0,
+        ];
+
+        try {
+          $options = ['json' => $payload];
+          if ($headers) {
+            $options['headers'] = $headers;
+          }
+          $http_response = $this->httpRequest('POST', $url, $options, $timeout);
+          $response = json_decode($http_response->getBody()->getContents(), TRUE);
+        }
+        catch (\Throwable $e) {
+          $this->handleApiThrowable($e);
+          throw $e;
+        }
+
+        if (!is_array($response)) {
+          throw new AiRequestErrorException('Invalid JSON response from completions endpoint.');
+        }
+        if (isset($response['error'])) {
+          throw new AiRequestErrorException('Completions error from ShieldGemma: ' . json_encode($response['error']));
+        }
+
+        $text = trim($response['choices'][0]['text'] ?? '');
+        $violated = ShieldGemma::responseIndicatesViolation($text);
+        $categories[$category] = $violated;
+        $raw_outputs[$category] = $text;
+        $flagged = $flagged || $violated;
+      }
+
+      $moderation_response = new ModerationResponse($flagged, ['categories' => $categories]);
+      return new ModerationOutput($moderation_response, $raw_outputs, ['categories' => $categories]);
+    }
+
+    // Default path for LlamaGuard3 and unknown parsers: use chat completions.
+    // (Their templates are typically satisfied by a plain user message or the
+    // server is configured with an appropriate --chat-template.)
     $payload = [
       'model' => $raw_model_id,
       'messages' => [
@@ -434,13 +504,19 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       ],
     ] + $this->configuration;
 
-    $response = $this->client->chat()->create($payload)->toArray();
+    try {
+      $response = $this->client->chat()->create($payload)->toArray();
+    }
+    catch (\Throwable $e) {
+      $this->handleApiThrowable($e);
+      throw $e;
+    }
+
     if (!isset($response['choices'][0]['message']['content'])) {
       throw new AiRequestErrorException('No content in moderation response.');
     }
     $message = $response['choices'][0]['message']['content'];
 
-    $parser_class = $this->getModerationParser($raw_model_id);
     if ($parser_class) {
       $moderation_response = $parser_class::parse($message);
     }
@@ -467,6 +543,10 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       if (str_contains($name, $pattern)) {
         return $class;
       }
+    }
+    // Extra robustness for ShieldGemma (covers shield-gemma, shield_gemma, shieldgemma etc.)
+    if (preg_match('/shield.?gemma/', $name)) {
+      return ShieldGemma::class;
     }
     return NULL;
   }
