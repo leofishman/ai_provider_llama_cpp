@@ -47,7 +47,7 @@ Stabilization work for reliable multi-server support, Key module integration, mo
 
 - Drupal 10.2, 11 or 12.
 - [AI module](https://www.drupal.org/project/ai) ^1.2
-- A running `llama-server`, Ollama, vLLM, or other OpenAI-compatible API.
+- A running OpenAI-compatible server (Ollama, vLLM, llama.cpp, LiteLLM, etc.).
 
 
 ## Installation
@@ -68,56 +68,32 @@ For each server, you can configure:
 - **Timeout** — Configurable per-server (defaults to 600s).
 - **Operation Types & Model Overrides** — Assign specific roles to the server or manually override auto-detected capabilities per model.
 
-## Running llama-server
+## Compatible servers
 
-### Single model
+This module works with **any server** that exposes an OpenAI-compatible `/v1` API (Ollama, vLLM, llama.cpp, LiteLLM, LM Studio, etc.).
 
-```bash
-llama-server --model /path/to/model.gguf --port 8080
-```
+You do **not** need to run llama.cpp. The majority of users actually run it with Ollama or vLLM.
 
-### Multi-model router (recommended)
+### Multiple specialized instances
 
-`llama-server` can manage multiple models and load/unload them on demand.
-Create a preset file and configure each model according to your hardware e.g with all layers loaded in gpu. `~/.config/llama-models.ini`):
+One of the strongest features of this module is running **several servers at once**, each specialized for different tasks:
 
-```ini
-[my-chat-model]
-hf-repo = bartowski/SmolLM2-360M-Instruct-GGUF:Q4_K_M
-n-gpu-layers = 99
+- Fast chat server (Ollama or llama.cpp)
+- Dedicated embeddings server (vLLM or Ollama)
+- Lightweight moderation server (Llama Guard 3 or ShieldGemma)
 
-[my-embedding-model]
-hf-repo = nomic-ai/nomic-embed-text-v1.5-GGUF:Q4_K_M
-n-gpu-layers = 99
-embeddings = on
+Each configured server appears as an independent provider (e.g. `llama_cpp:chat`, `llama_cpp:embeddings`).
 
-[my-reranker]
-hf-repo = gpustack/bge-reranker-v2-m3-GGUF:Q4_K_M
-n-gpu-layers = 99
-reranking = on
+### Operation types and model overrides
 
-[my-whisper-model]
-hf-repo = FL33TW00D-HF/whisper-tiny
-hf-file = tiny_q4k.gguf
-n-gpu-layers = 99
-```
+The most important configuration options (after host and port) are:
 
-Then start the router:
+- **Operation Types**: Choose which tasks this server should handle (Chat, Embeddings, Rerank, Moderation, etc.).  
+  Manual selection is usually more reliable than auto-detection when using Ollama, vLLM or custom models.
 
-```bash
-llama-server \
-  --host 0.0.0.0 \
-  --port 8080 \
-  --models-dir ~/.cache/huggingface/hub/ \
-  --models-preset ~/.config/llama-models.ini \
-  --models-max 3
-```
+- **Model Overrides**: For fine-tuned or unusual models, you can explicitly assign operation types per model in the server edit form.
 
-The module detects each model's capabilities automatically from the
-`--embeddings` and `--reranking` flags. For models loaded via `--hf-repo`,
-it also queries the HuggingFace API to determine the model type.
-
-For custom fine tuned models that have no flags or pipeline tags, you can use the model overrides in the config form to assign any operation type to any model.
+These two options are what allow the module to work well across very different backends.
 
 ## Maintainers
 

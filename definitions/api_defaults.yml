@@ -88,4 +88,3 @@ text_to_image:
     default: 'A beautiful mountain landscape during sunset, oil painting style.'
     required: true
   configuration: []
-

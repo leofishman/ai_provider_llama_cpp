@@ -243,7 +243,7 @@ class LlamaCppServerForm extends EntityForm {
 
     $status = $server->save();
 
-    // Discover models immediately so the edit form and AI settings can use them.
+    // Discover models so edit form and AI settings can use them.
     try {
       $provider = $this->aiProviderManager->createInstance('llama_cpp:' . $server->id());
       $provider->getConfiguredModels();
@@ -264,6 +264,8 @@ class LlamaCppServerForm extends EntityForm {
     ]));
 
     $form_state->setRedirectUrl($server->toUrl('collection'));
+
+    return $status;
   }
 
   /**

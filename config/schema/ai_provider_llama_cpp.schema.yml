@@ -41,4 +41,3 @@ ai_provider_llama_cpp.server.*:
     model_filter:
       type: string
       label: 'Model Filter'
-

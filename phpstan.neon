@@ -12,3 +12,6 @@ parameters:
     - module
     - inc
     - install
+
+  ignoreErrors:
+    - '#Unsafe usage of new static\(\)#'
