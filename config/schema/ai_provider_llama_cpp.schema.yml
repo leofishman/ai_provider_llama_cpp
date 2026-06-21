@@ -26,3 +26,7 @@ ai_provider_llama_cpp.server.*:
       sequence:
         type: string
         label: 'Operation Type'
+    model_filter:
+      type: string
+      label: 'Model Filter'
+

@@ -44,6 +44,7 @@ use Drupal\ai_provider_llama_cpp\LlamaCppServerListBuilder;
     'api_key',
     'timeout',
     'operation_types',
+    'model_filter',
   ],
   links: [
     'add-form' => '/admin/config/ai/providers/llama-cpp/add',
@@ -104,6 +105,13 @@ class LlamaCppServer extends ConfigEntityBase implements LlamaCppServerInterface
   protected array $operation_types = [];
 
   /**
+   * Model filtering pattern (comma-separated globs/sub-strings).
+   *
+   * @var string
+   */
+  protected string $model_filter = '';
+
+  /**
    * {@inheritdoc}
    */
   public function getHostName(): string {
@@ -138,4 +146,12 @@ class LlamaCppServer extends ConfigEntityBase implements LlamaCppServerInterface
     return $this->operation_types ?? [];
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function getModelFilter(): string {
+    return $this->model_filter ?? '';
+  }
+
 }
+

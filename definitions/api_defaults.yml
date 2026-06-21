@@ -81,3 +81,11 @@ moderation:
     default: 'Is this content safe?'
     required: true
   configuration: []
+text_to_image:
+  input:
+    description: 'Prompt to generate an image.'
+    type: 'string'
+    default: 'A beautiful mountain landscape during sunset, oil painting style.'
+    required: true
+  configuration: []
+

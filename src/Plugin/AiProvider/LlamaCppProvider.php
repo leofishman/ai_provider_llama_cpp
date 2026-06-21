@@ -18,6 +18,9 @@ use Drupal\ai\OperationType\Rerank\ReRankInterface;
 use Drupal\ai\OperationType\Rerank\ReRankOutput;
 use Drupal\ai\OperationType\SpeechToText\SpeechToTextInput;
 use Drupal\ai\OperationType\SpeechToText\SpeechToTextOutput;
+use Drupal\ai\OperationType\TextToImage\TextToImageInput;
+use Drupal\ai\OperationType\TextToImage\TextToImageInterface;
+use Drupal\ai\OperationType\TextToImage\TextToImageOutput;
 use Drupal\ai\Traits\OperationType\ChatTrait;
 use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
@@ -43,7 +46,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
   label: new TranslatableMarkup('llama.cpp (OpenAI-compatible)'),
   deriver: LlamaCppProviderDeriver::class,
 )]
-class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface, ModerationInterface {
+class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface, ModerationInterface, TextToImageInterface {
+
 
   use StringTranslationTrait;
   use ChatTrait;
@@ -51,7 +55,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   /**
    * All operation types this provider can support.
    */
-  const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank', 'moderation'];
+  const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank', 'moderation', 'text_to_image'];
+
 
   /**
    * Map from HuggingFace pipeline_tag to Drupal AI operation type id.
@@ -250,6 +255,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $all_types = [];
     $filtered = [];
 
+    $server = $this->getServerEntity();
+    $filter_pattern = $server ? $server->getModelFilter() : '';
+
     foreach ($response['data'] ?? [] as $model) {
       $raw_id = $model['id'];
       $machine_id = $this->getMachineName($raw_id);
@@ -257,6 +265,10 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $detected = $this->detectOperationTypes($model);
       $all_models[$machine_id] = $raw_id;
       $all_types[$machine_id] = $detected;
+
+      if ($filter_pattern !== '' && !$this->matchesFilterPattern($raw_id, $filter_pattern)) {
+        continue;
+      }
 
       $effective = $overrides[$machine_id] ?? $detected;
       if ($operation_type === NULL || in_array($operation_type, $effective)) {
@@ -269,6 +281,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $this->state->set("{$prefix}.model_types", $all_types);
 
     return $filtered;
+
   }
 
   /**
@@ -468,6 +481,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     $name = strtolower($model['id']);
+    if (preg_match('/stable.diffusion|stable[-_]diffusion|sdxl|flux|dall[-_]e|sd[-_]cascade|flux[-_]dev/', $name)) {
+      return ['text_to_image'];
+    }
     if (preg_match('/whisper|wav2vec|vosk/', $name)) {
       return ['speech_to_text'];
     }
@@ -482,6 +498,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     }
 
     return ['chat'];
+
   }
 
   /**
@@ -534,24 +551,29 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Returns models from State cache, filtered by operation type if given.
-   *
-   * @param string|null $operation_type
-   *   Operation type to filter by, or NULL for all models.
-   *
-   * @return array
-   *   Machine-safe model IDs mapped to raw model IDs.
-   */
   protected function getFallbackModels(?string $operation_type): array {
     $prefix = $this->getStateKeyPrefix();
     $this->models = $this->state->get("{$prefix}.models", []);
-    if ($operation_type === NULL) {
-      return $this->models;
+
+    $server = $this->getServerEntity();
+    $filter_pattern = $server ? $server->getModelFilter() : '';
+
+    $filtered = $this->models;
+    if ($filter_pattern !== '') {
+      $filtered = array_filter(
+        $filtered,
+        fn($raw_id) => $this->matchesFilterPattern($raw_id, $filter_pattern)
+      );
     }
+
+    if ($operation_type === NULL) {
+      return $filtered;
+    }
+
     $types = $this->state->get("{$prefix}.model_types", []);
     $overrides = $this->state->get("{$prefix}.model_overrides", []);
     return array_filter(
-      $this->models,
+      $filtered,
       function ($raw_id, $machine_id) use ($operation_type, $types, $overrides): bool {
         $effective = $overrides[$machine_id] ?? $types[$machine_id] ?? ['chat'];
         return in_array($operation_type, $effective, TRUE);
@@ -559,6 +581,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       ARRAY_FILTER_USE_BOTH,
     );
   }
+
 
   /**
    * Gets the raw model identifier from the stored mapping.
@@ -618,4 +641,85 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     return $host;
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function textToImage(string|TextToImageInput $input, string $model_id, array $tags = []): TextToImageOutput {
+    $model_id = $this->getModel($model_id);
+    return parent::textToImage($input, $model_id, $tags);
+  }
+
+  /**
+   * Checks if a model ID matches a comma-separated filter pattern.
+   *
+   * @param string $model_id
+   *   The raw model ID.
+   * @param string $pattern_string
+   *   Comma-separated list of allowed/denied models.
+   *
+   * @return bool
+   *   TRUE if the model ID matches the filter, FALSE otherwise.
+   */
+  protected function matchesFilterPattern(string $model_id, string $pattern_string): bool {
+    $pattern_string = trim($pattern_string);
+    if ($pattern_string === '') {
+      return TRUE;
+    }
+
+    $patterns = array_map('trim', explode(',', $pattern_string));
+    $patterns = array_filter($patterns);
+    if (empty($patterns)) {
+      return TRUE;
+    }
+
+    $include_patterns = [];
+    $exclude_patterns = [];
+
+    foreach ($patterns as $pattern) {
+      if (str_starts_with($pattern, '!')) {
+        $exclude_patterns[] = substr($pattern, 1);
+      }
+      else {
+        $include_patterns[] = $pattern;
+      }
+    }
+
+    // Check exclusions first.
+    foreach ($exclude_patterns as $pattern) {
+      if ($this->matchGlob($model_id, $pattern)) {
+        return FALSE;
+      }
+    }
+
+    // If there are inclusion patterns, at least one must match.
+    if (!empty($include_patterns)) {
+      foreach ($include_patterns as $pattern) {
+        if ($this->matchGlob($model_id, $pattern)) {
+          return TRUE;
+        }
+      }
+      return FALSE;
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Matches a string against a simple glob pattern (supporting wildcard *).
+   *
+   * @param string $string
+   *   The string to match.
+   * @param string $pattern
+   *   The glob pattern.
+   *
+   * @return bool
+   *   TRUE if matches, FALSE otherwise.
+   */
+  protected function matchGlob(string $string, string $pattern): bool {
+    $quoted = preg_quote($pattern, '/');
+    $regex = str_replace('\*', '.*', $quoted);
+    return (bool) preg_match('/^' . $regex . '$/i', $string);
+  }
+
 }
+

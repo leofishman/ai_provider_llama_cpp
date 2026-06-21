@@ -23,6 +23,7 @@ class LlamaCppServerForm extends EntityForm {
     'speech_to_text' => 'Speech to Text',
     'rerank'         => 'Rerank',
     'moderation'     => 'Moderation',
+    'text_to_image'  => 'Text to Image',
   ];
 
   /**
@@ -109,6 +110,22 @@ class LlamaCppServerForm extends EntityForm {
       '#max' => 3600,
     ];
 
+    $form['filtering'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Model Filtering'),
+      '#open' => TRUE,
+    ];
+
+    $form['filtering']['model_filter'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Model filter pattern'),
+      '#description' => $this->t('Comma-separated list of allowed models (wildcards * supported). Examples: <code>llama3*, *mistral*, !*old*</code>. Leave empty to allow all models.'),
+      '#default_value' => $server->getModelFilter(),
+      '#attributes' => ['placeholder' => 'llama3*, *mistral*, !*old*'],
+      '#parents' => ['model_filter'],
+    ];
+
+
     $form['operation_types'] = [
       '#type' => 'checkboxes',
       '#title' => $this->t('Operation types'),
@@ -123,6 +140,7 @@ class LlamaCppServerForm extends EntityForm {
     }
 
     return $form;
+
   }
 
   /**

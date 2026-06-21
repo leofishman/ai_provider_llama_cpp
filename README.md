@@ -13,16 +13,26 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
   - **Speech to Text** transcription via Whisper models (`/v1/audio/transcriptions`)
   - **Rerank** (`/v1/rerank`)
   - **Moderation** (native support for LlamaGuard3 and ShieldGemma)
+  - **Text to Image** generation (`/v1/images/generations` - e.g. via LiteLLM/OpenRouter)
+- **Model Filtering**: Allow or restrict models per server using clean glob patterns (e.g. `llama3*, !*old*`).
 - **Smart Auto-detection**: Reads server metadata to automatically determine model capabilities via CLI flags, HuggingFace API `pipeline_tag`, and intelligent name heuristics.
 - **Manual Capability Overrides**: Assign any operation type to any model per-server to override auto-detection.
 - **Robust Caching**: Model lists and detected capabilities are cached in Drupal State for resilience.
 - **Flexible Connection**: Configurable timeout per-server and optional API key support (for authenticated instances like vLLM).
+
+## Roadmap / Future (1.3.x)
+
+We plan to migrate models from State-based cache arrays to **Drupal Config Entities**. This will enable:
+1. **Views Integration**: Expose models as editable/filterable Views.
+2. **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
+3. **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
 
 ## Requirements
 
 - Drupal 10.2, 11 or 12.
 - [AI module](https://www.drupal.org/project/ai) ^1.2
 - A running `llama-server`, Ollama, vLLM, or other OpenAI-compatible API.
+
 
 ## Installation
 

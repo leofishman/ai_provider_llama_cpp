@@ -37,4 +37,13 @@ interface LlamaCppServerInterface extends ConfigEntityInterface {
    */
   public function getOperationTypes(): array;
 
+  /**
+   * Gets the model filter pattern.
+   *
+   * @return string
+   *   Glob-style or simple string filter pattern.
+   */
+  public function getModelFilter(): string;
+
 }
+
