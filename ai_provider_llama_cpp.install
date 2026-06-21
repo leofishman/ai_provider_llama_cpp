@@ -33,6 +33,13 @@ function ai_provider_llama_cpp_uninstall() {
  * Migrate single-server config to multi-server config entities.
  */
 function ai_provider_llama_cpp_update_10201() {
+  // Ensure the config entity type is installed.
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  if (!$update_manager->getEntityType('llama_cpp_server')) {
+    $entity_type = \Drupal::entityTypeManager()->getDefinition('llama_cpp_server');
+    $update_manager->installEntityType($entity_type);
+  }
+
   $config_factory = \Drupal::configFactory();
   $config = $config_factory->get('ai_provider_llama_cpp.settings');
 
@@ -100,6 +107,13 @@ function ai_provider_llama_cpp_update_10201() {
  * Migrate plaintext API keys to Key module entities.
  */
 function ai_provider_llama_cpp_update_10202() {
+  // Ensure the config entity type is installed.
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  if (!$update_manager->getEntityType('llama_cpp_server')) {
+    $entity_type = \Drupal::entityTypeManager()->getDefinition('llama_cpp_server');
+    $update_manager->installEntityType($entity_type);
+  }
+
   $entity_type_manager = \Drupal::entityTypeManager();
   $server_storage = $entity_type_manager->getStorage('llama_cpp_server');
   $key_storage = $entity_type_manager->getStorage('key');

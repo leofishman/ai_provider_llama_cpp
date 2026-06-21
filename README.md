@@ -22,10 +22,26 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 ## Roadmap / Future (1.3.x)
 
-We plan to migrate models from State-based cache arrays to **Drupal Config Entities**. This will enable:
-1. **Views Integration**: Expose models as editable/filterable Views.
-2. **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
-3. **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
+### Planned for the next major release
+
+- **Migrate model data from State to Config Entities**:
+  1. **Views Integration**: Expose discovered models and overrides as editable/filterable Views.
+  2. **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
+  3. **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
+
+- **Improved test coverage**:
+  - Expand Kernel tests for model discovery, filtering, moderation parsers, rerank, and text-to-image paths.
+  - Add more scenarios for multi-server setups and edge cases in derivatives.
+
+- **Admin UI enhancements**:
+  - Add a "Test connection" / status action directly from the server listing (beyond form validation).
+  - Show last discovered model count and basic capability summary in the server list.
+
+- **Architecture & DX improvements**:
+  - Extract model cache management and discovery logic into a dedicated service for better testability and reuse.
+  - Evaluate additional per-server configuration options (e.g. default model per operation type).
+
+Stabilization work for reliable multi-server support, Key module integration, model filtering, and robust derivative handling was completed during the 1.2.x cycle.
 
 ## Requirements
 

@@ -140,6 +140,27 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
+   * Gets the derivative ID.
+   *
+   * @return string|null
+   *   The derivative ID, or NULL if not derived.
+   */
+  public function getDerivativeId(): ?string {
+    $definition = $this->getPluginDefinition();
+    if (!empty($definition['derivative_id'])) {
+      return $definition['derivative_id'];
+    }
+    // Drupal's derivative discovery does not always set derivative_id in the
+    // plugin definition; parse it from the composite plugin ID instead.
+    $plugin_id = $this->getPluginId();
+    if (str_contains($plugin_id, ':')) {
+      [, $derivative_id] = explode(':', $plugin_id, 2);
+      return $derivative_id !== '' ? $derivative_id : NULL;
+    }
+    return NULL;
+  }
+
+  /**
    * Gets the server config entity for this derived plugin instance.
    *
    * @return \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface|null

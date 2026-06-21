@@ -243,6 +243,16 @@ class LlamaCppServerForm extends EntityForm {
 
     $status = $server->save();
 
+    // Discover models immediately so the edit form and AI settings can use them.
+    try {
+      $provider = $this->aiProviderManager->createInstance('llama_cpp:' . $server->id());
+      $provider->getConfiguredModels();
+    }
+    catch (\Throwable) {
+      // Connectivity is validated in validateForm(); discovery may still fail
+      // if the server is temporarily unreachable after save.
+    }
+
     // Save model overrides to State if present.
     if (!$server->isNew()) {
       $this->saveModelOverrides($form_state, $server->id());

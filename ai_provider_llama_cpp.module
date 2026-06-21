@@ -1,0 +1,39 @@
+<?php
+
+/**
+ * @file
+ * Hooks for the llama.cpp multi-instance provider module.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+
+/**
+ * Implements hook_entity_insert().
+ */
+function ai_provider_llama_cpp_entity_insert(EntityInterface $entity): void {
+  _ai_provider_llama_cpp_clear_provider_cache($entity);
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function ai_provider_llama_cpp_entity_update(EntityInterface $entity): void {
+  _ai_provider_llama_cpp_clear_provider_cache($entity);
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function ai_provider_llama_cpp_entity_delete(EntityInterface $entity): void {
+  _ai_provider_llama_cpp_clear_provider_cache($entity);
+}
+
+/**
+ * Clears AI provider plugin discovery when server entities change.
+ */
+function _ai_provider_llama_cpp_clear_provider_cache(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() !== 'llama_cpp_server') {
+    return;
+  }
+  \Drupal::service('ai.provider')->clearCachedDefinitions();
+}
