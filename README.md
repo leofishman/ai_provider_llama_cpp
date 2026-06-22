@@ -51,7 +51,8 @@ Stabilization work for reliable multi-server support, Key module integration, mo
 ## Requirements
 
 - Drupal 10.2, 11 or 12.
-- [AI module](https://www.drupal.org/project/ai) ^1.2
+- [AI module](https://www.drupal.org/project/ai) ^1.2.
+- [Key module](https://www.drupal.org/project/key) ^1.18 (for credentials management).
 - A running OpenAI-compatible server (Ollama, vLLM, llama.cpp, LiteLLM, etc.).
 
 
@@ -59,6 +60,7 @@ Stabilization work for reliable multi-server support, Key module integration, mo
 
 ```bash
 composer require drupal/ai_provider_llama_cpp
+
 drush pm:enable ai_provider_llama_cpp
 ```
 
