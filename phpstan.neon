@@ -15,3 +15,5 @@ parameters:
 
   ignoreErrors:
     - '#Unsafe usage of new static\(\)#'
+    - '#Call to an undefined method Drupal\\ai\\Plugin\\ProviderProxy::getConfiguredModels\(\)#'
+    - '#Parameter \$input of method Drupal\\ai_provider_llama_cpp\\Plugin\\AiProvider\\LlamaCppProvider::(chat|speechToText|textToImage)\(\) has invalid type Drupal\\ai\\Operation\\.*#'

@@ -62,6 +62,7 @@ final class Update10201Test extends KernelTestBase {
 
     $server_storage = $this->container->get('entity_type.manager')
       ->getStorage('llama_cpp_server');
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server */
     $server = $server_storage->load('default');
     $this->assertNotNull($server);
     $this->assertSame('http://127.0.0.1', $server->getHostName());

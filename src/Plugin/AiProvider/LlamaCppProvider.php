@@ -171,9 +171,10 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     if ($this->serverEntity === FALSE) {
       $derivative_id = $this->getDerivativeId();
       if ($derivative_id) {
-        $this->serverEntity = $this->entityTypeManager
+        $entity = $this->entityTypeManager
           ->getStorage('llama_cpp_server')
           ->load($derivative_id);
+        $this->serverEntity = $entity instanceof LlamaCppServerInterface ? $entity : NULL;
       }
       else {
         $this->serverEntity = NULL;
@@ -558,7 +559,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $this->loadClient();
     $raw_model_id = $this->getModel($model_id);
     try {
-      $data = $this->client->models()->retrieve($raw_model_id)->toArray();
+      $model_response = $this->client->models()->retrieve($raw_model_id);
+      /** @var array<string, mixed> $data */
+      $data = (array) $model_response->toArray();
       if (!empty($data['embedding']) && is_array($data['embedding'])) {
         return (int) ($data['embedding']['size'] ?? count($data['embedding']));
       }

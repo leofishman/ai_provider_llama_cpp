@@ -119,6 +119,7 @@ function ai_provider_llama_cpp_update_10202() {
   $key_storage = $entity_type_manager->getStorage('key');
   $migrated = 0;
 
+  /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server */
   foreach ($server_storage->loadMultiple() as $server) {
     $api_key = $server->getApiKey();
     if ($api_key === '') {

@@ -60,6 +60,7 @@ final class Update10202Test extends KernelTestBase {
     $server = $server_storage->load('secure');
     $this->assertSame('llama_cpp_secure', $server->getApiKey());
 
+    /** @var \Drupal\key\KeyInterface $key */
     $key = $key_storage->load('llama_cpp_secure');
     $this->assertNotNull($key);
     $this->assertSame('sk-plaintext-secret', $key->getKeyValue());
@@ -85,6 +86,7 @@ final class Update10202Test extends KernelTestBase {
 
     ai_provider_llama_cpp_update_10202();
 
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server */
     $server = $server_storage->load('local');
     $this->assertSame('', $server->getApiKey());
   }
