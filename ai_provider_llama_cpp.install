@@ -163,7 +163,7 @@ function ai_provider_llama_cpp_update_10202() {
 }
 
 /**
- * Migrate from derived plugin IDs (llama_cpp:server) to single plugin + model entities.
+ * Migrate derived plugin IDs (llama_cpp:server) to a single plugin + models.
  */
 function ai_provider_llama_cpp_update_10203() {
   // Ensure the new model entity type is installed.
@@ -173,31 +173,13 @@ function ai_provider_llama_cpp_update_10203() {
     $update_manager->installEntityType($entity_type);
   }
 
-  $config_factory = \Drupal::configFactory();
-  $ai_config = $config_factory->getEditable('ai.settings');
-  $defaults = $ai_config->get('default_providers') ?? [];
-  $changed = FALSE;
-  $notes = [];
-
-  foreach ($defaults as $op_type => $provider_info) {
-    $pid = $provider_info['provider_id'] ?? '';
-    if (str_starts_with($pid, 'llama_cpp:')) {
-      $defaults[$op_type]['provider_id'] = 'llama_cpp';
-      $changed = TRUE;
-      $notes[] = $op_type . ' (was ' . $pid . ')';
-    }
-  }
-
-  if ($changed) {
-    $ai_config->set('default_providers', $defaults)->save();
-  }
-
-  // Migrate old State-based model data (pre 1.3 refactor using derivers) into
-  // llama_cpp_model config entities so existing setups keep working.
   $state = \Drupal::state();
   $model_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_model');
   $server_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_server');
 
+  // 1. Migrate old State-based model data (pre-refactor derivers) into
+  //    llama_cpp_model config entities FIRST, so the default_providers rewrite
+  //    below can remap each model_id reference to the new entity id.
   foreach ($server_storage->loadMultiple() as $server) {
     $sid = $server->id();
     $prefix = "ai_provider_llama_cpp.server.{$sid}";
@@ -210,28 +192,67 @@ function ai_provider_llama_cpp_update_10203() {
       if ($model_storage->load($eid)) {
         continue;
       }
-      $detected = $old_types[$machine] ?? ['chat'];
-      $ov = $old_overrides[$machine] ?? [];
       $model_storage->create([
         'id' => $eid,
         'label' => $server->label() . ' / ' . $raw,
         'server_id' => $sid,
         'raw_model_id' => $raw,
-        'detected_operation_types' => $detected,
-        'operation_types' => $ov,
+        'detected_operation_types' => $old_types[$machine] ?? ['chat'],
+        'operation_types' => $old_overrides[$machine] ?? [],
       ])->save();
     }
 
-    // Optionally leave old state; uninstall cleans them.
+    // Old state keys are left in place; hook_uninstall() cleans them up.
   }
 
-  // Note: model_ids in defaults may need manual re-selection because keys
-  // changed from per-derivative machine names to "server__machine" format
-  // stored in llama_cpp_model entities. Discovery will populate them.
+  // 2. Rewrite ai.settings.default_providers: collapse derived provider ids
+  //    (llama_cpp:server) to the single 'llama_cpp' plugin, and remap each
+  //    model_id from the old per-server machine name to the new entity id
+  //    ("server__machine") whenever the migrated model entity exists.
+  $ai_config = \Drupal::configFactory()->getEditable('ai.settings');
+  $defaults = $ai_config->get('default_providers') ?? [];
+  $changed = FALSE;
+  $mapped = [];
+  $unmapped = [];
 
-  $msg = $changed
-    ? 'Updated default_providers for: ' . implode(', ', $notes) . '. Re-select models in AI settings if necessary.'
-    : 'No derived llama_cpp provider references found.';
+  foreach ($defaults as $op_type => $provider_info) {
+    $pid = $provider_info['provider_id'] ?? '';
+    if (!str_starts_with($pid, 'llama_cpp:')) {
+      continue;
+    }
 
-  return t($msg);
+    $server_id = substr($pid, strlen('llama_cpp:'));
+    $defaults[$op_type]['provider_id'] = 'llama_cpp';
+    $changed = TRUE;
+
+    $old_model = $provider_info['model_id'] ?? '';
+    if ($old_model === '') {
+      continue;
+    }
+    $new_model = $server_id . '__' . $old_model;
+    if ($model_storage->load($new_model)) {
+      $defaults[$op_type]['model_id'] = $new_model;
+      $mapped[] = $op_type;
+    }
+    else {
+      $unmapped[] = $op_type;
+    }
+  }
+
+  if ($changed) {
+    $ai_config->set('default_providers', $defaults)->save();
+  }
+
+  if (!$changed) {
+    return t('No derived llama_cpp provider references found.');
+  }
+  if ($unmapped) {
+    return t('Migrated llama.cpp providers. Remapped models for: @mapped. Could not auto-map models for: @unmapped — please re-select them in the AI settings.', [
+      '@mapped' => implode(', ', $mapped) ?: '-',
+      '@unmapped' => implode(', ', $unmapped),
+    ]);
+  }
+  return t('Migrated llama.cpp providers and remapped models for: @mapped.', [
+    '@mapped' => implode(', ', $mapped),
+  ]);
 }

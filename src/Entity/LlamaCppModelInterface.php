@@ -23,9 +23,10 @@ interface LlamaCppModelInterface extends ConfigEntityInterface {
   public function getRawModelId(): string;
 
   /**
-   * Gets auto-detected operation types (from server flags, HF tags, heuristics).
+   * Gets auto-detected operation types (server flags, HF tags, heuristics).
    *
    * @return string[]
+   *   The detected operation type ids.
    */
   public function getDetectedOperationTypes(): array;
 
@@ -35,6 +36,7 @@ interface LlamaCppModelInterface extends ConfigEntityInterface {
    * Empty array means "use detected".
    *
    * @return string[]
+   *   The manual override operation type ids (empty when none).
    */
   public function getOperationTypes(): array;
 
@@ -49,6 +51,7 @@ interface LlamaCppModelInterface extends ConfigEntityInterface {
    * Prefers manual overrides; falls back to detected.
    *
    * @return string[]
+   *   The effective operation type ids.
    */
   public function getEffectiveOperationTypes(): array;
 

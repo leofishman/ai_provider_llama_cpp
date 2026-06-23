@@ -8,8 +8,9 @@ use Drupal\KernelTests\KernelTestBase;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
- * Tests that the llama.cpp provider is a single (non-derived) plugin and that
- * model config entities are used instead of State + derivatives.
+ * Tests the single (non-derived) llama.cpp provider plugin and model entities.
+ *
+ * Model config entities are used instead of State + derivatives.
  *
  * @group ai_provider_llama_cpp
  */
@@ -42,8 +43,9 @@ final class LlamaCppProviderTest extends KernelTestBase {
   }
 
   /**
-   * Tests that llama_cpp_model entity type is available and models are stored
-   * as config entities (after a server creation + simulated discovery).
+   * Tests that the llama_cpp_model entity type stores models as config.
+   *
+   * Exercised after a server creation + simulated discovery.
    */
   public function testModelConfigEntities(): void {
     $etm = $this->container->get('entity_type.manager');
@@ -86,6 +88,76 @@ final class LlamaCppProviderTest extends KernelTestBase {
 
     $reloaded = $model_storage->load('testserver__llama3');
     $this->assertSame(['embeddings'], $reloaded->getEffectiveOperationTypes());
+  }
+
+  /**
+   * Tests that getConfiguredModels() is read-only (creates no config entities).
+   *
+   * Discovery is an explicit write path (::discoverModels()); the frequent read
+   * calls from the AI subsystem must never persist config.
+   */
+  public function testGetConfiguredModelsIsReadOnly(): void {
+    $etm = $this->container->get('entity_type.manager');
+    $model_storage = $etm->getStorage('llama_cpp_model');
+
+    $etm->getStorage('llama_cpp_server')->create([
+      'id' => 'readonly',
+      'label' => 'Read Only',
+      'host_name' => 'http://127.0.0.1',
+      'port' => '8080',
+      'api_key' => '',
+      'timeout' => 600,
+      'operation_types' => [],
+      'model_filter' => '',
+    ])->save();
+
+    /** @var \Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider $provider */
+    $provider = $this->container->get('ai.provider')
+      ->createInstance('llama_cpp', ['server_id' => 'readonly']);
+
+    // No models known yet, and no network is reachable in a kernel test.
+    $result = $provider->getConfiguredModels();
+    $this->assertSame([], $result);
+
+    // The key assertion: the read call must not have created any model entity.
+    $this->assertCount(0, $model_storage->loadByProperties(['server_id' => 'readonly']));
+  }
+
+  /**
+   * Tests that model entity ids are sanitized to valid, unique config ids.
+   */
+  public function testModelEntityIdSanitization(): void {
+    // The AI module wraps providers in a ProviderProxy (forwarding via __call),
+    // so reflect out the real plugin to exercise its protected id helpers.
+    $proxy = $this->container->get('ai.provider')->createInstance('llama_cpp');
+    $plugin_ref = new \ReflectionProperty($proxy, 'plugin');
+    $plugin_ref->setAccessible(TRUE);
+    /** @var \Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider $provider */
+    $provider = $plugin_ref->getValue($proxy);
+
+    $machine = new \ReflectionMethod($provider, 'getMachineName');
+    $machine->setAccessible(TRUE);
+    $build = new \ReflectionMethod($provider, 'buildModelEntityId');
+    $build->setAccessible(TRUE);
+
+    // Slashes, dots and case are normalised; runs of separators collapse.
+    $this->assertSame('qwen_qwen2_5_7b_instruct_q4_k_m', $machine->invoke($provider, 'Qwen/Qwen2.5-7B-Instruct-Q4_K_M'));
+    $this->assertSame('llama3_8b', $machine->invoke($provider, 'llama3:8b'));
+
+    // Resulting entity ids only contain [a-z0-9_] and the server separator.
+    $id = $build->invoke($provider, 'gpu', $machine->invoke($provider, 'Qwen/Qwen2.5-7B-Instruct'));
+    $this->assertSame('gpu__qwen_qwen2_5_7b_instruct', $id);
+    $this->assertMatchesRegularExpression('/^[a-z0-9_]+$/', $id);
+
+    // Degenerate (all-special) raw id still yields a valid id.
+    $degenerate = $build->invoke($provider, 'gpu', $machine->invoke($provider, '///'));
+    $this->assertSame('gpu__model', $degenerate);
+
+    // Over-long names are capped and disambiguated deterministically.
+    $long = str_repeat('a', 300);
+    $capped = $build->invoke($provider, 'gpu', $long);
+    $this->assertLessThanOrEqual(160, strlen($capped));
+    $this->assertSame($capped, $build->invoke($provider, 'gpu', $long));
   }
 
 }

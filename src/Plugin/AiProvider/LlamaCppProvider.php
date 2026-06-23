@@ -39,7 +39,7 @@ use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Plugin implementation for OpenAI-compatible servers (llama.cpp, Ollama, vLLM, LiteLLM, etc).
+ * Plugin for OpenAI-compatible servers (llama.cpp, Ollama, vLLM, LiteLLM, …).
  *
  * This is a single non-derived plugin. Multi-server support is achieved via
  * llama_cpp_server config entities + llama_cpp_model config entities.
@@ -145,10 +145,11 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    *
    * Resolution order:
    * 1. Explicit server_id passed via plugin $configuration when instantiated.
-   * 2. Active server set for the current model operation (via setActiveServerForModel).
-   * 3. NULL (generic/validation paths that inject host_name directly into config).
+   * 2. Active server set for the current model op (setActiveServerForModel).
+   * 3. NULL (generic/validation paths that inject host_name into config).
    *
    * @return \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface|null
+   *   The resolved server entity, or NULL when there is no server context.
    */
   protected function getServerEntity(): ?LlamaCppServerInterface {
     if ($this->serverEntity === FALSE) {
@@ -289,7 +290,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     foreach ($servers as $srv) {
       $t = $srv->getOperationTypes();
       if (empty($t)) {
-        return self::SUPPORTED_OPERATION_TYPES; // one unrestricted server => all
+        // One unrestricted server => all.
+        return self::SUPPORTED_OPERATION_TYPES;
       }
       $union = array_unique(array_merge($union, $t));
     }
@@ -328,51 +330,72 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
 
   /**
    * {@inheritdoc}
+   *
+   * Read-only: this never writes configuration. Model discovery (creating or
+   * updating llama_cpp_model config entities) happens explicitly when a server
+   * is saved (see LlamaCppServerForm) or via ::discoverModels(). Keeping this
+   * read path side-effect free avoids polluting config sync with runtime data
+   * pulled from a remote server, and prevents config writes on cache-cold reads
+   * from the AI subsystem.
    */
   public function getConfiguredModels(?string $operation_type = NULL, array $capabilities = []): array {
     $server = $this->getServerEntity();
     $server_id = $server ? $server->id() : NULL;
 
-    // If we have a concrete server context (from config or active), discover only for it.
-    if ($server_id) {
-      try {
-        $this->loadClient();
-        $response = $this->client->models()->list()->toArray();
-      }
-      catch (\Throwable $e) {
-        $this->loggerFactory->get('ai_provider_llama_cpp')->error(
-          'Failed to get models from server: @message',
-          ['@message' => $e->getMessage()]
-        );
-        return $this->getFallbackModelsFromEntities($server_id, $operation_type);
-      }
+    // When $server_id is NULL this returns the union across all servers.
+    return $this->buildModelListForOperation($server_id, $operation_type);
+  }
 
-      $filter_pattern = $server->getModelFilter() ?: '';
-      $discovered = [];
-
-      foreach ($response['data'] ?? [] as $model_entry) {
-        $raw_id = $model_entry['id'];
-        if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
-          continue;
-        }
-        $machine = $this->getMachineName($raw_id);
-        $model_entity_id = $this->buildModelEntityId($server_id, $machine);
-
-        $detected = $this->detectOperationTypes($model_entry);
-        $discovered[$model_entity_id] = [
-          'raw' => $raw_id,
-          'detected' => $detected,
-        ];
-      }
-
-      $this->persistModelsForServer($server_id, $discovered);
-
-      // Return filtered view using entity ids as keys (for uniqueness across servers).
-      return $this->buildModelListForOperation($server_id, $operation_type);
+  /**
+   * Discovers models from the active server and persists them as entities.
+   *
+   * This is the write path: call it only from explicit user actions (saving a
+   * server) or maintenance commands, never from a read/render path.
+   *
+   * @return array<string, string>
+   *   Map of model entity id => raw model id for the active server. Falls back
+   *   to the already-known models if the server is unreachable.
+   */
+  public function discoverModels(): array {
+    $server = $this->getServerEntity();
+    $server_id = $server ? $server->id() : NULL;
+    if (!$server_id) {
+      return [];
     }
 
-    // No specific server: return union of all known models across servers.
-    return $this->buildModelListForOperation(NULL, $operation_type);
+    try {
+      $this->loadClient();
+      $response = $this->client->models()->list()->toArray();
+    }
+    catch (\Throwable $e) {
+      $this->loggerFactory->get('ai_provider_llama_cpp')->error(
+        'Failed to get models from server: @message',
+        ['@message' => $e->getMessage()]
+      );
+      return $this->buildModelListForOperation($server_id, NULL);
+    }
+
+    $filter_pattern = $server->getModelFilter() ?: '';
+    $discovered = [];
+
+    foreach ($response['data'] ?? [] as $model_entry) {
+      $raw_id = $model_entry['id'];
+      if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
+        continue;
+      }
+      $machine = $this->getMachineName($raw_id);
+      $model_entity_id = $this->buildModelEntityId($server_id, $machine);
+
+      $detected = $this->detectOperationTypes($model_entry);
+      $discovered[$model_entity_id] = [
+        'raw' => $raw_id,
+        'detected' => $detected,
+      ];
+    }
+
+    $this->persistModelsForServer($server_id, $discovered);
+
+    return $this->buildModelListForOperation($server_id, NULL);
   }
 
   /**
@@ -751,13 +774,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Fallback: load models from llama_cpp_model entities for a given server.
-   */
-  protected function getFallbackModelsFromEntities(?string $server_id, ?string $operation_type): array {
-    return $this->buildModelListForOperation($server_id, $operation_type);
-  }
-
-  /**
    * Build the list of models (entity_id => raw) filtered for a given op type.
    *
    * If $server_id is NULL, includes models from all servers.
@@ -795,7 +811,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * Persist (create or update) model entities for a server after discovery.
    *
    * @param string $server_id
+   *   The owning server entity id.
    * @param array<string, array{raw: string, detected: string[]}> $discovered
+   *   Discovered models keyed by model entity id.
    */
   protected function persistModelsForServer(string $server_id, array $discovered): void {
     $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
@@ -852,10 +870,29 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Generate a stable unique config entity id for a model on a server.
+   * Generate a stable, valid config entity id for a model on a server.
+   *
+   * The id is "server__machine". Both parts are already restricted to
+   * [a-z0-9_] by their machine-name handling, so the only remaining risks are
+   * an empty machine name and excessive length (config object names are capped
+   * at 250 chars). We guard both, disambiguating any truncation with a short
+   * deterministic hash so the same (server, raw model) always yields the same
+   * id.
    */
   protected function buildModelEntityId(string $server_id, string $machine_name): string {
-    return $server_id . '__' . $machine_name;
+    if ($machine_name === '') {
+      $machine_name = 'model';
+    }
+    $id = $server_id . '__' . $machine_name;
+
+    // Leave generous headroom under the 250-char config name limit (the
+    // "ai_provider_llama_cpp.model." prefix already consumes ~28 chars).
+    $max = 160;
+    if (strlen($id) > $max) {
+      $suffix = '_' . substr(hash('sha256', $id), 0, 8);
+      $id = substr($id, 0, $max - strlen($suffix)) . $suffix;
+    }
+    return $id;
   }
 
   /**
@@ -865,7 +902,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   protected function getModel(string $model_id): string {
     if (empty($this->models)) {
-      // Populate from current server context if possible, or load the specific model.
+      // Populate from the current server context, or load the specific model.
       $server = $this->getServerEntity();
       if ($server) {
         $this->models = $this->buildModelListForOperation($server->id(), NULL);
@@ -895,7 +932,12 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   protected function getMachineName(string $string): string {
     $transliterated = $this->transliteration->transliterate($string, LanguageInterface::LANGCODE_DEFAULT, '_');
     $transliterated = mb_strtolower($transliterated);
-    return (string) preg_replace('@[^a-z0-9_]+@', '_', $transliterated);
+    $machine = (string) preg_replace('@[^a-z0-9_]+@', '_', $transliterated);
+    // Collapse runs of underscores and trim them so ids stay clean and stable
+    // for raw model names containing slashes, dots or repeated separators
+    // (e.g. "Qwen/Qwen2.5-7B-Instruct" => "qwen_qwen2_5_7b_instruct").
+    $machine = (string) preg_replace('@_+@', '_', $machine);
+    return trim($machine, '_');
   }
 
   /**

@@ -12,15 +12,21 @@
 
 This document defines the architectural direction for the 2.0 line of `ai_provider_llama_cpp`.
 
-**Core idea**: Transform the module from a "llama.cpp + derivers" specialized provider into a **strong, multi-backend foundation** that:
+**Core idea**: Sharpen `ai_provider_llama_cpp` into the best **OpenAI-compatible
+multi-server** provider, while a separate, vendor-neutral module grows in parallel to host
+provider-specific plugins (HF native, Claude, …). Concretely, the 2.0 line:
 
 - Excels at OpenAI-compatible servers (current killer feature).
-- Uses **config entities** for servers and models (instead of State + heavy derivers).
-- Allows adding **specific provider plugins** over time without architectural pain.
-- Provides clear, low-friction migration paths from the current module **and from other AI provider modules**.
-- Is properly internationalized, with Spanish translation as a first-class deliverable.
+- Uses **config entities** for servers and models (instead of State + heavy derivers), with
+  discovery writing config only on explicit action (never on a read path).
+- Keeps multiplicity without derivers (single `llama_cpp` plugin + model entities).
+- Provides clear, low-friction, **automatic** migration paths from the current module.
+- Marks all interface strings for translation; the Spanish translation is delivered last,
+  via localize.drupal.org, once strings stabilize.
 
-We treat `2.0` as an **in-place evolution** of the existing module for now. Renaming (e.g. to `ai_universal_provider` or `ai_provider_compat`) will be evaluated only after the foundation is solid.
+We **do not rename** this module. Instead we run two parallel tracks (see §4): this module
+stays the OpenAI-compatible specialist, and a new module (e.g. `ai_provider_universal`)
+becomes the home for non-OpenAI-compatible provider families.
 
 ---
 
@@ -46,9 +52,16 @@ We treat `2.0` as an **in-place evolution** of the existing module for now. Rena
 
 ## 2. Key Architectural Principles for 2.0
 
-1. **Config Entities are King**
+1. **Config Entities for user-managed configuration; discovery stays a write-on-action**
    - Servers (`llama_cpp_server`) remain the unit of backend configuration.
-   - Models become first-class config entities (`llama_cpp_model`).
+   - Models are first-class config entities (`llama_cpp_model`) so that overrides
+     and per-model metadata are exportable, versionable and Views-ready.
+   - **But the model catalog is runtime data pulled from a remote server, not
+     hand-authored config.** Therefore model entities are created/updated only on
+     an *explicit* action (saving a server, or `LlamaCppProvider::discoverModels()`),
+     **never** as a side effect of a read path such as `getConfiguredModels()`.
+     This keeps `drush config:status`/CMI clean and avoids config writes on
+     cache-cold reads from the AI subsystem.
 
 2. **Specific Plugins, Not Derivers**
    - Stable plugin ID per *provider family* (e.g. `llama_cpp` for OpenAI-compatible).
@@ -85,8 +98,10 @@ We treat `2.0` as an **in-place evolution** of the existing module for now. Rena
 
 ### `llama_cpp_model` (new)
 Fields:
-- `id` (stable, e.g. `myserver__llama3_8b`)
-- `label` (human readable, e.g. "GPU Server / llama3-8b") — translatable via config translation
+- `id` (stable, `server__machine`, e.g. `myserver__llama3_8b`) — sanitized to
+  `[a-z0-9_]`, length-capped with a deterministic hash suffix (see `buildModelEntityId()`)
+- `label` (human readable, e.g. "GPU Server / llama3-8b") — this is **user/derived
+  content**, not an interface string (see §7 on what "translatable" really means here)
 - `server_id`
 - `raw_model_id`
 - `detected_operation_types[]`
@@ -99,18 +114,53 @@ These entities replace the old State keys:
 
 Benefits: exportable, Views-ready, attachable (future guardrails per model, token limits, etc.).
 
+> **Decision — everything is config (exportable)**: Servers are clearly
+> user-authored configuration (host, port, key, timeout) and must be exportable.
+> Model entities are **also config**: the maintainer wants every change exportable,
+> and config entities give us overrides, per-model metadata and Views for free.
+> `raw_model_id`/`detected_operation_types` are discovered, but we keep them as config
+> and simply re-reconcile them by re-running discovery (re-saving the server) on a new
+> environment. The only rule we enforce is that config is written **on explicit
+> discovery, never on a read path** — this keeps `drush config:export` predictable.
+
 ---
 
 ## 4. Provider Plugin Model
 
 Current (on 2.0 branch):
 - Single `#[AiProvider(id: 'llama_cpp')]` class.
-- `getConfiguredModels()` returns models from all (or filtered) servers using entity IDs as keys.
+- `getConfiguredModels()` is **read-only**: it returns models from all (or filtered)
+  servers using entity IDs as keys, reading existing `llama_cpp_model` entities.
+- `discoverModels()` is the **write path**: it queries the server's `/v1/models`,
+  persists the catalog as entities, and is invoked explicitly (server save / command).
 - Operation methods resolve the correct server from the model entity at call time.
 
+**Strategy decision — two parallel tracks (not a rename)**:
+Rather than rename `ai_provider_llama_cpp` into "the universal module", we run two tracks
+at the same time:
+
+- **Track A — `ai_provider_llama_cpp` 2.0** (this module): stays focused as the best
+  **OpenAI-compatible multi-server** provider. Keeps the `llama_cpp_*` ids (frozen in
+  config/update hooks; renaming costs another migration for no user benefit). Ships
+  relatively soon with the hardening in Phase 0.5. Existing users migrate in place.
+
+- **Track B — a new, vendor-neutral universal module** (e.g. `ai_provider_universal`):
+  a separate project that hosts **one specific `#[AiProvider]` plugin per provider family**
+  that is *not* plain OpenAI-compatible — e.g. `huggingface_native`, `anthropic` (Claude) —
+  plus an `openai_compatible` plugin for the generic case.
+
+Why two modules instead of one rename: llama.cpp 2.0 already serves real users today; the
+universal module is a longer-term, broader effort. Decoupling them lets each ship on its own
+cadence and risk profile.
+
+**The one cost to manage**: duplicated OpenAI-compatible logic across the two modules.
+Mitigation options (decide before Track B grows): (a) extract a shared trait/base reused by
+both; (b) let Track B's `openai_compatible` plugin become canonical and eventually sunset
+Track A; (c) accept short-term duplication. We lean toward (a).
+
 Future:
-- `OpenAiCompatibleProvider` (rename/refactor of current class if desired).
-- New dedicated plugins for non-compatible providers.
+- `OpenAiCompatibleProvider` base/trait shared between tracks.
+- Track B grows dedicated plugins for non-compatible providers (HF native, Claude, …).
 
 ---
 
@@ -167,24 +217,31 @@ We prioritize **automatic as much as possible** + clear user steps.
 
 ### 6.1 From ai_provider_llama_cpp (1.2.x → 2.x on same module)
 
-**Automated (update hooks)**:
+**Automated (update hooks)** — order matters, implemented in `update_10203`:
 1. Install `llama_cpp_model` entity type.
-2. Rewrite `ai.settings.default_providers`:
-   - Change any `llama_cpp:servername` → `llama_cpp`
-3. Migrate old State data into `llama_cpp_model` entities (per server).
-4. Preserve detected vs override operation types.
+2. **First** migrate old State data into `llama_cpp_model` entities (per server),
+   preserving detected vs override operation types.
+3. **Then** rewrite `ai.settings.default_providers`:
+   - Change any `llama_cpp:servername` → `llama_cpp` (provider_id).
+   - **Remap `model_id`**: the old derived id `llama_cpp:servername` already encodes
+     the server, so the new model id is recoverable as `servername__oldmodelid`. When
+     the migrated entity exists, the update rewrites `model_id` automatically so
+     operations keep working with **no manual re-selection**.
+   - When a `model_id` cannot be auto-mapped, leave it untouched and report it in the
+     update message for manual re-selection.
 
 **User steps** (must be documented in README + release notes):
 1. `composer update` + `drush updb`.
-2. Go to **Administration → AI → llama.cpp Servers** and **re-save every server** (forces fresh discovery).
-3. Go to AI configuration and re-assign providers/models where the old derived IDs were used.
+2. Most setups work immediately after `updb` (provider + model auto-remapped).
+3. Only for models the update could not auto-map: re-save the server (fresh discovery)
+   and re-select the model in AI configuration.
 4. Test.
 
 All user-facing messages from update hooks and forms must be properly marked for translation (see section 7).
 
 **Model ID mapping**:
-- Old: `llama3`
-- New: `default__llama3` (or `serverid__machine_name`)
+- Old: `llama3` (under derived provider `llama_cpp:default`)
+- New: `default__llama3` (i.e. `serverid__machine_name`), auto-remapped by `update_10203`.
 - The actual model sent to the API (`raw_model_id`) does **not** change.
 
 **Rollback strategy**:
@@ -223,7 +280,15 @@ Implement as a new specific plugin inside this module family and provide a one-t
 ## 7. Internationalization and Translations (i18n / l10n)
 
 ### Why This Matters
-As we evolve toward a more universal provider (and potentially a broader audience), the module must be usable by non-English speakers from the beginning. Spanish is a hard requirement because of the large Drupal community in Spanish-speaking countries (Spain, Latin America).
+The module should be usable by non-English speakers. There is a large Drupal community in Spanish-speaking countries (Spain, Latin America), so a Spanish translation is a valued deliverable — but see the framing below: it is **not a release-blocker** for 2.0.
+
+### What is actually translatable (important framing)
+- **Interface strings** (in code) are the real i18n surface: marked with `t()` /
+  `TranslatableMarkup`, extracted into a `.pot` template, translated via `.po`.
+- **Entity labels** (a server named "GPU Server", a model label "GPU Server / llama3")
+  are **user/derived content**, not interface strings. Drupal's Config Translation only
+  translates *shipped default* config, so it does not meaningfully make user-created
+  server/model labels multilingual. We must not over-promise here.
 
 ### Requirements
 
@@ -239,17 +304,16 @@ As we evolve toward a more universal provider (and potentially a broader audienc
     - Moderation parser messages, help texts
 
 - **Config entities**:
-  - Labels are translatable via Drupal's Config Translation module (if users enable it).
-  - We should not assume English-only labels for servers or models.
+  - Only *shipped default* config labels are reachable by Config Translation; user-created
+    server/model labels are content and are displayed as the user entered them.
+  - We should not assume English-only labels for servers or models in code paths.
 
-- **Spanish translation (minimum)**:
-  - Provide a complete `es` translation.
-  - Target files: `translations/es.po` or contribute directly via https://localize.drupal.org
-  - At least the following must be translated:
-    - All UI strings
-    - Module info (name, description)
-    - Help texts and long descriptions in forms
-    - Key error/setup messages
+- **Spanish translation (non-blocking deliverable)**:
+  - Deliver translations the standard contrib way: contribute via
+    https://localize.drupal.org once the string surface is stable (after the trait
+    extraction in Phase 2), rather than bundling/maintaining an `es.po` in-repo.
+  - Ship a generated `.pot` template so translators have a complete catalog.
+  - Priority strings: all UI strings, module info, form help/descriptions, error/setup messages.
 
 - **Documentation**:
   - README.md should have a note that Spanish translation is maintained.
@@ -279,8 +343,9 @@ As we evolve toward a more universal provider (and potentially a broader audienc
 Key files changed in the initial refactor:
 - New entities: `LlamaCppModel`, `LlamaCppModelInterface`
 - `LlamaCppProvider` no longer uses a deriver
-- Server form now works with model entities instead of State
-- Update hook + uninstall logic updated
+- `getConfiguredModels()` is read-only; discovery/persistence lives in `discoverModels()`
+- Server form now works with model entities instead of State and triggers `discoverModels()` on save
+- Update hook (`update_10203`) migrates State → entities, then remaps both provider_id and model_id
 - Runtime active server resolution via model lookup
 
 ---
@@ -290,11 +355,13 @@ Key files changed in the initial refactor:
 | Phase | Goal                                      | Dependencies          | Target AI Core |
 |-------|-------------------------------------------|-----------------------|----------------|
 | 0     | Core refactor (no derivers + model entities) | —                     | 1.2+           |
-| 1     | Stabilization, migration hooks, docs, UX polish + full Spanish translation | Phase 0               | 1.2+           |
+| 0.5   | **Harden data model**: read-only `getConfiguredModels()`, explicit `discoverModels()`, robust id sanitization, complete `update_10203` model_id remap, tests | Phase 0 | 1.2+ |
+| 1     | Stabilization, migration hooks, docs, UX polish (+ `.pot` template) | Phase 0.5 | 1.2+           |
 | 2     | Extract reusable OpenAI-compatible base / traits | Phase 1               | 1.2+           |
+| 2.5   | **Spanish translation** (strings now stable) via localize.drupal.org | Phase 2 | 1.2+ |
 | 3     | Optional deep integration with AI 1.3 Guardrails | AI >=1.3              | 1.3+ (optional)|
 | 4     | Add second concrete provider plugin as validation | Phase 2               | 1.2+           |
-| 5     | Evaluate rename + broader "universal" positioning | Phase 4 + community   | TBD            |
+| 5     | Evaluate vendor-neutral rename for 3.0 + broader "universal" positioning | Phase 4 + community   | TBD            |
 
 ---
 
@@ -303,7 +370,8 @@ Key files changed in the initial refactor:
 - **User confusion from changed provider/model IDs** → Excellent release notes + Drush helper to show old → new mapping.
 - **Adoption if we target only 1.4** → We are explicitly choosing broad 1.2 compatibility.
 - **Maintenance burden of supporting multiple AI core versions** → Keep new 1.4 features clearly optional and behind `if (\Drupal::moduleHandler()->moduleExists('ai') && version_compare(...))`.
-- **Entity ID strategy** → Using `server__machine` is pragmatic. We can evolve naming later with an update hook if needed.
+- **Entity ID strategy** → `server__machine`, sanitized to `[a-z0-9_]` and length-capped with a deterministic hash suffix to avoid invalid/over-long ids. Naming can still evolve later via an update hook.
+- **Config sync pollution from discovered models** → Model entities stay config (by decision, for exportability), but are written only on explicit discovery (server save / `discoverModels()`), never on read. On a new environment, re-saving the server re-reconciles the catalog.
 
 ---
 
@@ -311,11 +379,18 @@ Key files changed in the initial refactor:
 
 **Decided**:
 - Primary minimum = AI ^1.2 for 2.0 line.
-- Keep using `llama_cpp_*` entity and plugin names for now (rename later).
-- Models use composite IDs (`server__machine`).
+- **Two parallel tracks** (see §4): `ai_provider_llama_cpp` 2.0 stays the OpenAI-compatible
+  specialist (keeps `llama_cpp_*` names); a separate new vendor-neutral module hosts
+  per-provider plugins (HF native, Claude, …). No in-place rename of this module.
+- Data model is **config entities** (servers and models), exportable; discovery writes only
+  on explicit action.
+- Models use composite IDs (`server__machine`), sanitized and length-capped.
+- Translation is the **last** step, delivered via localize.drupal.org after strings stabilize.
 
 **Still open**:
-- Should we expose a generic "AI Provider Backend" entity type that multiple provider plugins can share?
+- Shared OpenAI-compatible base across the two tracks: extracted trait/base (preferred),
+  duplication, or Track-B-canonical-and-sunset-A? (See §4 cost note.)
+- Name + drupal.org project for the universal module (`ai_provider_universal`?).
 - How should per-model guardrails (when we add them) interact with the core AI 1.3+ Guardrails system?
 - When (if ever) do we make 1.4 the minimum?
 
@@ -323,13 +398,15 @@ Key files changed in the initial refactor:
 
 ## 12. Success Criteria
 
-Before considering a rename or declaring 2.0 stable:
+Before declaring 2.0 stable:
 - All existing 1.2.x functionality works at least as well.
-- Migration from the llama.cpp module is documented and tested via update hooks.
-- At least one non-trivial migration story from another provider module is documented.
+- Migration from the llama.cpp module is documented and tested via update hooks, with
+  `model_id` auto-remapped so operations keep working without manual re-selection.
+- `getConfiguredModels()` is read-only (asserted by a test); discovery is explicit.
 - No use of derivers for core multiplicity.
 - Clear compatibility statement regarding AI 1.2 vs 1.4.
-- At least a complete and reviewed Spanish translation is available for all UI strings and documentation.
+- All interface strings marked with `t()`/`TranslatableMarkup` and a `.pot` template exported.
+  (The Spanish `.po` itself is a follow-up via localize.drupal.org, not a 2.0 blocker.)
 
 ---
 

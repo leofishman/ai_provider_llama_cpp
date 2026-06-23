@@ -41,7 +41,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
   ],
   links: [
     'collection' => '/admin/config/ai/providers/llama-cpp/models',
-    // edit/delete optional for v1 of this refactor
+    // edit/delete optional for v1 of this refactor.
   ],
 )]
 class LlamaCppModel extends ConfigEntityBase implements LlamaCppModelInterface {

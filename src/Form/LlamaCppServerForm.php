@@ -7,6 +7,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Http\ClientFactory;
 use Drupal\ai\AiProviderPluginManager;
+use Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider;
 use Drupal\key\KeyRepositoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -34,8 +35,12 @@ class LlamaCppServerForm extends EntityForm {
     protected AiProviderPluginManager $aiProviderManager,
     protected KeyRepositoryInterface $keyRepository,
     protected ClientFactory $httpClientFactory,
-    protected EntityTypeManagerInterface $entityTypeManager,
-  ) {}
+    EntityTypeManagerInterface $entity_type_manager,
+  ) {
+    // Assign to the (untyped) property inherited from EntityForm instead of
+    // promoting a natively-typed override.
+    $this->entityTypeManager = $entity_type_manager;
+  }
 
   /**
    * {@inheritdoc}
@@ -243,10 +248,14 @@ class LlamaCppServerForm extends EntityForm {
 
     $status = $server->save();
 
-    // Discover models so edit form and AI settings can use them.
+    // Discover models (write path) so the edit form and AI settings can use
+    // them. getConfiguredModels() is read-only; persisting model entities is an
+    // explicit action triggered here on save.
     try {
       $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
-      $provider->getConfiguredModels();
+      if ($provider instanceof LlamaCppProvider) {
+        $provider->discoverModels();
+      }
     }
     catch (\Throwable) {
       // Connectivity is validated in validateForm(); discovery may still fail
