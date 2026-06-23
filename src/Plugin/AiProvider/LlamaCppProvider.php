@@ -23,10 +23,10 @@ use Drupal\ai\OperationType\TextToImage\TextToImageInput;
 use Drupal\ai\OperationType\TextToImage\TextToImageInterface;
 use Drupal\ai\OperationType\TextToImage\TextToImageOutput;
 use Drupal\ai\Traits\OperationType\ChatTrait;
+use Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface;
 use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
-use Drupal\ai_provider_llama_cpp\Plugin\Derivative\LlamaCppProviderDeriver;
 use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
 use Drupal\Component\Transliteration\TransliterationInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -39,16 +39,16 @@ use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Plugin implementation for OpenAI-compatible servers.
+ * Plugin implementation for OpenAI-compatible servers (llama.cpp, Ollama, vLLM, LiteLLM, etc).
  *
- * Each configured server entity produces a derived plugin instance
- * (e.g. "llama_cpp:my_server") that appears as an individual provider
- * within the AI module.
+ * This is a single non-derived plugin. Multi-server support is achieved via
+ * llama_cpp_server config entities + llama_cpp_model config entities.
+ * Model IDs are unique across servers to allow the AI module to pick specific
+ * backends/models without using plugin derivatives.
  */
 #[AiProvider(
   id: 'llama_cpp',
   label: new TranslatableMarkup('llama.cpp (OpenAI-compatible)'),
-  deriver: LlamaCppProviderDeriver::class,
 )]
 class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankInterface, ModerationInterface, TextToImageInterface {
 
@@ -141,39 +141,27 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Gets the derivative ID.
+   * Gets the server config entity.
    *
-   * @return string|null
-   *   The derivative ID, or NULL if not derived.
-   */
-  public function getDerivativeId(): ?string {
-    $definition = $this->getPluginDefinition();
-    if (!empty($definition['derivative_id'])) {
-      return $definition['derivative_id'];
-    }
-    // Drupal's derivative discovery does not always set derivative_id in the
-    // plugin definition; parse it from the composite plugin ID instead.
-    $plugin_id = $this->getPluginId();
-    if (str_contains($plugin_id, ':')) {
-      [, $derivative_id] = explode(':', $plugin_id, 2);
-      return $derivative_id !== '' ? $derivative_id : NULL;
-    }
-    return NULL;
-  }
-
-  /**
-   * Gets the server config entity for this derived plugin instance.
+   * Resolution order:
+   * 1. Explicit server_id passed via plugin $configuration when instantiated.
+   * 2. Active server set for the current model operation (via setActiveServerForModel).
+   * 3. NULL (generic/validation paths that inject host_name directly into config).
    *
    * @return \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface|null
-   *   The server entity, or NULL for non-derived usage.
    */
   protected function getServerEntity(): ?LlamaCppServerInterface {
     if ($this->serverEntity === FALSE) {
-      $derivative_id = $this->getDerivativeId();
-      if ($derivative_id) {
+      $server_id = $this->configuration['server_id'] ?? NULL;
+
+      if (!$server_id && $this->activeServerId) {
+        $server_id = $this->activeServerId;
+      }
+
+      if ($server_id) {
         $entity = $this->entityTypeManager
           ->getStorage('llama_cpp_server')
-          ->load($derivative_id);
+          ->load($server_id);
         $this->serverEntity = $entity instanceof LlamaCppServerInterface ? $entity : NULL;
       }
       else {
@@ -184,17 +172,45 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Returns the State key prefix for this server instance.
+   * Active server ID for the duration of a model-specific operation.
    *
-   * @return string
-   *   A prefix like "ai_provider_llama_cpp.server.my_server".
+   * @var string|null
    */
-  protected function getStateKeyPrefix(): string {
-    $derivative_id = $this->getDerivativeId();
-    if ($derivative_id) {
-      return "ai_provider_llama_cpp.server.{$derivative_id}";
+  protected ?string $activeServerId = NULL;
+
+  /**
+   * Resolve and set the active server based on a model identifier.
+   *
+   * The model identifier here is the key returned by getConfiguredModels()
+   * (which is the llama_cpp_model entity id).
+   */
+  protected function setActiveServerForModel(string $model_key): void {
+    $this->activeServerId = NULL;
+    $this->serverEntity = FALSE;
+
+    // Try to load the model entity to find its server.
+    $model = $this->entityTypeManager
+      ->getStorage('llama_cpp_model')
+      ->load($model_key);
+
+    if ($model instanceof LlamaCppModelInterface) {
+      $this->activeServerId = $model->getServerId();
     }
-    return 'ai_provider_llama_cpp';
+    elseif (str_contains($model_key, '__')) {
+      // Fallback for legacy compound keys "server__machine" during transition.
+      [$maybe_server] = explode('__', $model_key, 2);
+      if ($this->entityTypeManager->getStorage('llama_cpp_server')->load($maybe_server)) {
+        $this->activeServerId = $maybe_server;
+      }
+    }
+  }
+
+  /**
+   * Clear any active server context (call after an operation if needed).
+   */
+  protected function clearActiveServer(): void {
+    $this->activeServerId = NULL;
+    $this->serverEntity = FALSE;
   }
 
   /**
@@ -265,7 +281,19 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
         return $types;
       }
     }
-    return self::SUPPORTED_OPERATION_TYPES;
+
+    // No specific server context: union across all servers.
+    $storage = $this->entityTypeManager->getStorage('llama_cpp_server');
+    $servers = $storage->loadMultiple();
+    $union = [];
+    foreach ($servers as $srv) {
+      $t = $srv->getOperationTypes();
+      if (empty($t)) {
+        return self::SUPPORTED_OPERATION_TYPES; // one unrestricted server => all
+      }
+      $union = array_unique(array_merge($union, $t));
+    }
+    return $union ?: self::SUPPORTED_OPERATION_TYPES;
   }
 
   /**
@@ -302,80 +330,98 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function getConfiguredModels(?string $operation_type = NULL, array $capabilities = []): array {
-    try {
-      $this->loadClient();
-      $response = $this->client->models()->list()->toArray();
-    }
-    catch (\Throwable $e) {
-      $this->loggerFactory->get('ai_provider_llama_cpp')->error(
-        'Failed to get models from server: @message',
-        ['@message' => $e->getMessage()]
-      );
-      return $this->getFallbackModels($operation_type);
-    }
-
-    $prefix = $this->getStateKeyPrefix();
-    $overrides = $this->state->get("{$prefix}.model_overrides", []);
-    $all_models = [];
-    $all_types = [];
-    $filtered = [];
-
     $server = $this->getServerEntity();
-    $filter_pattern = $server ? $server->getModelFilter() : '';
+    $server_id = $server ? $server->id() : NULL;
 
-    foreach ($response['data'] ?? [] as $model) {
-      $raw_id = $model['id'];
-      $machine_id = $this->getMachineName($raw_id);
-
-      $detected = $this->detectOperationTypes($model);
-      $all_models[$machine_id] = $raw_id;
-      $all_types[$machine_id] = $detected;
-
-      if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
-        continue;
+    // If we have a concrete server context (from config or active), discover only for it.
+    if ($server_id) {
+      try {
+        $this->loadClient();
+        $response = $this->client->models()->list()->toArray();
+      }
+      catch (\Throwable $e) {
+        $this->loggerFactory->get('ai_provider_llama_cpp')->error(
+          'Failed to get models from server: @message',
+          ['@message' => $e->getMessage()]
+        );
+        return $this->getFallbackModelsFromEntities($server_id, $operation_type);
       }
 
-      $effective = $overrides[$machine_id] ?? $detected;
-      if ($operation_type === NULL || in_array($operation_type, $effective)) {
-        $filtered[$machine_id] = $raw_id;
+      $filter_pattern = $server->getModelFilter() ?: '';
+      $discovered = [];
+
+      foreach ($response['data'] ?? [] as $model_entry) {
+        $raw_id = $model_entry['id'];
+        if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
+          continue;
+        }
+        $machine = $this->getMachineName($raw_id);
+        $model_entity_id = $this->buildModelEntityId($server_id, $machine);
+
+        $detected = $this->detectOperationTypes($model_entry);
+        $discovered[$model_entity_id] = [
+          'raw' => $raw_id,
+          'detected' => $detected,
+        ];
       }
+
+      $this->persistModelsForServer($server_id, $discovered);
+
+      // Return filtered view using entity ids as keys (for uniqueness across servers).
+      return $this->buildModelListForOperation($server_id, $operation_type);
     }
 
-    $this->models = $all_models;
-    $this->state->set("{$prefix}.models", $all_models);
-    $this->state->set("{$prefix}.model_types", $all_types);
-
-    return $filtered;
+    // No specific server: return union of all known models across servers.
+    return $this->buildModelListForOperation(NULL, $operation_type);
   }
 
   /**
    * {@inheritdoc}
    */
   public function chat(array|string|ChatInput $input, string $model_id, array $tags = []): ChatOutput {
-    $model_id = $this->getModel($model_id);
-    return parent::chat($input, $model_id, $tags);
+    $this->setActiveServerForModel($model_id);
+    try {
+      $resolved = $this->getModel($model_id);
+      return parent::chat($input, $resolved, $tags);
+    }
+    finally {
+      $this->clearActiveServer();
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function embeddings(string|EmbeddingsInput $input, string $model_id, array $tags = []): EmbeddingsOutput {
-    $model_id = $this->getModel($model_id);
-    return parent::embeddings($input, $model_id, $tags);
+    $this->setActiveServerForModel($model_id);
+    try {
+      $resolved = $this->getModel($model_id);
+      return parent::embeddings($input, $resolved, $tags);
+    }
+    finally {
+      $this->clearActiveServer();
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function speechToText(string|SpeechToTextInput $input, string $model_id, array $tags = []): SpeechToTextOutput {
-    $model_id = $this->getModel($model_id);
-    return parent::speechToText($input, $model_id, $tags);
+    $this->setActiveServerForModel($model_id);
+    try {
+      $resolved = $this->getModel($model_id);
+      return parent::speechToText($input, $resolved, $tags);
+    }
+    finally {
+      $this->clearActiveServer();
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function rerank(ReRankInput $input, string $model_id, array $tags = []): ReRankOutput {
+    $this->setActiveServerForModel($model_id);
     $this->loadClient();
     $raw_model_id = $this->getModel($model_id);
 
@@ -413,21 +459,26 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       throw $e;
     }
 
-    return new ReRankOutput(
+    $output = new ReRankOutput(
       $data['results'] ?? [],
       $data['id'] ?? '',
       $data,
     );
+    $this->clearActiveServer();
+    return $output;
   }
 
   /**
    * {@inheritdoc}
    */
   public function moderation(string|ModerationInput $input, ?string $model_id = NULL, array $tags = []): ModerationOutput {
+    if ($model_id) {
+      $this->setActiveServerForModel($model_id);
+    }
     $this->loadClient();
 
     $prompt = $input instanceof ModerationInput ? $input->getPrompt() : $input;
-    $raw_model_id = $this->getModel($model_id);
+    $raw_model_id = $this->getModel($model_id ?? '');
 
     $parser_class = $this->getModerationParser($raw_model_id);
 
@@ -492,7 +543,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       }
 
       $moderation_response = new ModerationResponse($flagged, ['categories' => $categories]);
-      return new ModerationOutput($moderation_response, $raw_outputs, ['categories' => $categories]);
+      $out = new ModerationOutput($moderation_response, $raw_outputs, ['categories' => $categories]);
+      $this->clearActiveServer();
+      return $out;
     }
 
     // Default path for LlamaGuard3 and unknown parsers: use chat completions.
@@ -526,7 +579,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $moderation_response = new ModerationResponse($flagged);
     }
 
-    return new ModerationOutput($moderation_response, $message, $response);
+    $out = new ModerationOutput($moderation_response, $message, $response);
+    $this->clearActiveServer();
+    return $out;
   }
 
   /**
@@ -556,6 +611,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function embeddingsVectorSize(string $model_id): int {
+    $this->setActiveServerForModel($model_id);
     $this->loadClient();
     $raw_model_id = $this->getModel($model_id);
     try {
@@ -578,6 +634,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
         ['@model' => $raw_model_id, '@message' => $e->getMessage()]
       );
     }
+    $this->clearActiveServer();
     return parent::embeddingsVectorSize($model_id);
   }
 
@@ -694,58 +751,134 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   }
 
   /**
-   * Returns models from State cache, filtered by operation type if given.
-   *
-   * @param string|null $operation_type
-   *   Operation type to filter by, or NULL for all models.
-   *
-   * @return array
-   *   Machine-safe model IDs mapped to raw model IDs.
+   * Fallback: load models from llama_cpp_model entities for a given server.
    */
-  protected function getFallbackModels(?string $operation_type): array {
-    $prefix = $this->getStateKeyPrefix();
-    $this->models = $this->state->get("{$prefix}.models", []);
-
-    $server = $this->getServerEntity();
-    $filter_pattern = $server ? $server->getModelFilter() : '';
-
-    $filtered = $this->models;
-    if ($filter_pattern !== '') {
-      $filtered = array_filter(
-        $filtered,
-        fn($raw_id) => ModelFilter::matches($raw_id, $filter_pattern)
-      );
-    }
-
-    if ($operation_type === NULL) {
-      return $filtered;
-    }
-
-    $types = $this->state->get("{$prefix}.model_types", []);
-    $overrides = $this->state->get("{$prefix}.model_overrides", []);
-    return array_filter(
-      $filtered,
-      function ($raw_id, $machine_id) use ($operation_type, $types, $overrides): bool {
-        $effective = $overrides[$machine_id] ?? $types[$machine_id] ?? ['chat'];
-        return in_array($operation_type, $effective, TRUE);
-      },
-      ARRAY_FILTER_USE_BOTH,
-    );
+  protected function getFallbackModelsFromEntities(?string $server_id, ?string $operation_type): array {
+    return $this->buildModelListForOperation($server_id, $operation_type);
   }
 
   /**
-   * Gets the raw model identifier from the stored mapping.
+   * Build the list of models (entity_id => raw) filtered for a given op type.
    *
-   * @param string $model_id
-   *   The machine-safe model id.
+   * If $server_id is NULL, includes models from all servers.
+   */
+  protected function buildModelListForOperation(?string $server_id, ?string $operation_type): array {
+    $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
+    $query = $storage->getQuery();
+
+    if ($server_id) {
+      $query->condition('server_id', $server_id);
+    }
+
+    $ids = $query->accessCheck(FALSE)->execute();
+    $models = $storage->loadMultiple($ids);
+
+    $result = [];
+    $this->models = [];
+
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model */
+    foreach ($models as $model) {
+      $key = $model->id();
+      $raw = $model->getRawModelId();
+      $this->models[$key] = $raw;
+
+      $effective = $model->getEffectiveOperationTypes();
+      if ($operation_type === NULL || in_array($operation_type, $effective, TRUE)) {
+        $result[$key] = $raw;
+      }
+    }
+
+    return $result;
+  }
+
+  /**
+   * Persist (create or update) model entities for a server after discovery.
    *
-   * @return string
-   *   The raw model id.
+   * @param string $server_id
+   * @param array<string, array{raw: string, detected: string[]}> $discovered
+   */
+  protected function persistModelsForServer(string $server_id, array $discovered): void {
+    $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
+
+    // Load existing for this server to update / remove stale.
+    $existing = $storage->loadByProperties(['server_id' => $server_id]);
+
+    $seen_ids = [];
+
+    foreach ($discovered as $entity_id => $info) {
+      $seen_ids[$entity_id] = TRUE;
+
+      /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface|null $model */
+      $model = $storage->load($entity_id);
+
+      $raw = $info['raw'];
+      $detected = $info['detected'];
+
+      if (!$model) {
+        $model = $storage->create([
+          'id' => $entity_id,
+          'label' => $raw,
+          'server_id' => $server_id,
+          'raw_model_id' => $raw,
+        ]);
+      }
+
+      $model->setRawModelId($raw);
+      $model->setServerId($server_id);
+      $model->setDetectedOperationTypes($detected);
+
+      // Make label more informative: "ServerLabel / raw" when possible.
+      $server_label = '';
+      $srv = $this->entityTypeManager->getStorage('llama_cpp_server')->load($server_id);
+      if ($srv) {
+        $server_label = $srv->label();
+      }
+      $nice_label = $server_label ? ($server_label . ' / ' . $raw) : $raw;
+
+      // Only overwrite label if it was previously simple.
+      if (empty($model->label()) || $model->label() === $model->getRawModelId() || str_ends_with($model->label(), ' / ' . $raw)) {
+        $model->set('label', $nice_label);
+      }
+
+      $model->save();
+    }
+
+    // Remove models that disappeared from the server.
+    foreach ($existing as $old_id => $old_model) {
+      if (!isset($seen_ids[$old_id])) {
+        $old_model->delete();
+      }
+    }
+  }
+
+  /**
+   * Generate a stable unique config entity id for a model on a server.
+   */
+  protected function buildModelEntityId(string $server_id, string $machine_name): string {
+    return $server_id . '__' . $machine_name;
+  }
+
+  /**
+   * Gets the raw model identifier from the stored mapping (or model entities).
+   *
+   * The $model_id here is the key used by the AI system (llama_cpp_model id).
    */
   protected function getModel(string $model_id): string {
     if (empty($this->models)) {
-      $prefix = $this->getStateKeyPrefix();
-      $this->models = $this->state->get("{$prefix}.models", []);
+      // Populate from current server context if possible, or load the specific model.
+      $server = $this->getServerEntity();
+      if ($server) {
+        $this->models = $this->buildModelListForOperation($server->id(), NULL);
+      }
+      else {
+        // Try direct load of the model entity.
+        $model = $this->entityTypeManager
+          ->getStorage('llama_cpp_model')
+          ->load($model_id);
+        if ($model instanceof LlamaCppModelInterface) {
+          return $model->getRawModelId();
+        }
+      }
     }
     return $this->models[$model_id] ?? $model_id;
   }
@@ -794,8 +927,14 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function textToImage(string|TextToImageInput $input, string $model_id, array $tags = []): TextToImageOutput {
-    $model_id = $this->getModel($model_id);
-    return parent::textToImage($input, $model_id, $tags);
+    $this->setActiveServerForModel($model_id);
+    try {
+      $resolved = $this->getModel($model_id);
+      return parent::textToImage($input, $resolved, $tags);
+    }
+    finally {
+      $this->clearActiveServer();
+    }
   }
 
   /**

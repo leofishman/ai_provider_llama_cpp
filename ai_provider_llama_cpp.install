@@ -10,9 +10,16 @@
  */
 function ai_provider_llama_cpp_uninstall() {
   $state = \Drupal::state();
+  $entity_type_manager = \Drupal::entityTypeManager();
 
-  // Clean up per-server state keys.
-  $servers = \Drupal::entityTypeManager()
+  // Delete model config entities (new storage).
+  $model_storage = $entity_type_manager->getStorage('llama_cpp_model');
+  foreach ($model_storage->loadMultiple() as $model) {
+    $model->delete();
+  }
+
+  // Clean up any remaining per-server state model keys (from pre-refactor).
+  $servers = $entity_type_manager
     ->getStorage('llama_cpp_server')
     ->loadMultiple();
   foreach ($servers as $server) {
@@ -153,4 +160,78 @@ function ai_provider_llama_cpp_update_10202() {
   }
 
   return t('Migrated @count server API key(s) to Key entities.', ['@count' => $migrated]);
+}
+
+/**
+ * Migrate from derived plugin IDs (llama_cpp:server) to single plugin + model entities.
+ */
+function ai_provider_llama_cpp_update_10203() {
+  // Ensure the new model entity type is installed.
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  if (!$update_manager->getEntityType('llama_cpp_model')) {
+    $entity_type = \Drupal::entityTypeManager()->getDefinition('llama_cpp_model');
+    $update_manager->installEntityType($entity_type);
+  }
+
+  $config_factory = \Drupal::configFactory();
+  $ai_config = $config_factory->getEditable('ai.settings');
+  $defaults = $ai_config->get('default_providers') ?? [];
+  $changed = FALSE;
+  $notes = [];
+
+  foreach ($defaults as $op_type => $provider_info) {
+    $pid = $provider_info['provider_id'] ?? '';
+    if (str_starts_with($pid, 'llama_cpp:')) {
+      $defaults[$op_type]['provider_id'] = 'llama_cpp';
+      $changed = TRUE;
+      $notes[] = $op_type . ' (was ' . $pid . ')';
+    }
+  }
+
+  if ($changed) {
+    $ai_config->set('default_providers', $defaults)->save();
+  }
+
+  // Migrate old State-based model data (pre 1.3 refactor using derivers) into
+  // llama_cpp_model config entities so existing setups keep working.
+  $state = \Drupal::state();
+  $model_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_model');
+  $server_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_server');
+
+  foreach ($server_storage->loadMultiple() as $server) {
+    $sid = $server->id();
+    $prefix = "ai_provider_llama_cpp.server.{$sid}";
+    $old_models = $state->get("{$prefix}.models", []);
+    $old_types = $state->get("{$prefix}.model_types", []);
+    $old_overrides = $state->get("{$prefix}.model_overrides", []);
+
+    foreach ($old_models as $machine => $raw) {
+      $eid = $sid . '__' . $machine;
+      if ($model_storage->load($eid)) {
+        continue;
+      }
+      $detected = $old_types[$machine] ?? ['chat'];
+      $ov = $old_overrides[$machine] ?? [];
+      $model_storage->create([
+        'id' => $eid,
+        'label' => $server->label() . ' / ' . $raw,
+        'server_id' => $sid,
+        'raw_model_id' => $raw,
+        'detected_operation_types' => $detected,
+        'operation_types' => $ov,
+      ])->save();
+    }
+
+    // Optionally leave old state; uninstall cleans them.
+  }
+
+  // Note: model_ids in defaults may need manual re-selection because keys
+  // changed from per-derivative machine names to "server__machine" format
+  // stored in llama_cpp_model entities. Discovery will populate them.
+
+  $msg = $changed
+    ? 'Updated default_providers for: ' . implode(', ', $notes) . '. Re-select models in AI settings if necessary.'
+    : 'No derived llama_cpp provider references found.';
+
+  return t($msg);
 }

@@ -25,11 +25,22 @@ function ai_provider_llama_cpp_entity_update(EntityInterface $entity): void {
  * Implements hook_entity_delete().
  */
 function ai_provider_llama_cpp_entity_delete(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() === 'llama_cpp_server') {
+    // Clean up associated model entities.
+    $model_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_model');
+    $models = $model_storage->loadByProperties(['server_id' => $entity->id()]);
+    foreach ($models as $model) {
+      $model->delete();
+    }
+  }
   _ai_provider_llama_cpp_clear_provider_cache($entity);
 }
 
 /**
  * Clears AI provider plugin discovery when server entities change.
+ *
+ * Note: with the move away from derivers, this is mostly for future-proofing
+ * or if other plugins start deriving from server list.
  */
 function _ai_provider_llama_cpp_clear_provider_cache(EntityInterface $entity): void {
   if ($entity->getEntityTypeId() !== 'llama_cpp_server') {

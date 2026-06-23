@@ -3,9 +3,9 @@
 namespace Drupal\ai_provider_llama_cpp\Form;
 
 use Drupal\Core\Entity\EntityForm;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Http\ClientFactory;
-use Drupal\Core\State\StateInterface;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\key\KeyRepositoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -32,9 +32,9 @@ class LlamaCppServerForm extends EntityForm {
    */
   public function __construct(
     protected AiProviderPluginManager $aiProviderManager,
-    protected StateInterface $state,
     protected KeyRepositoryInterface $keyRepository,
     protected ClientFactory $httpClientFactory,
+    protected EntityTypeManagerInterface $entityTypeManager,
   ) {}
 
   /**
@@ -43,9 +43,9 @@ class LlamaCppServerForm extends EntityForm {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('ai.provider'),
-      $container->get('state'),
       $container->get('key.repository'),
       $container->get('http_client_factory'),
+      $container->get('entity_type.manager'),
     );
   }
 
@@ -149,15 +149,10 @@ class LlamaCppServerForm extends EntityForm {
   /**
    * Builds the model capability overrides fieldset.
    *
-   * @param \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server
-   *   The server entity.
-   *
-   * @return array
-   *   The form element.
+   * Now reads from llama_cpp_model config entities (instead of State).
    */
   protected function buildOverridesForm($server): array {
     $server_id = $server->id();
-    $prefix = "ai_provider_llama_cpp.server.{$server_id}";
 
     $element = [
       '#type'  => 'details',
@@ -168,29 +163,34 @@ class LlamaCppServerForm extends EntityForm {
       '#open' => FALSE,
     ];
 
-    $all_models = $this->state->get("{$prefix}.models", []);
+    $model_storage = $this->entityTypeManager->getStorage('llama_cpp_model');
+    $models = $model_storage->loadByProperties(['server_id' => $server_id]);
 
-    if (empty($all_models)) {
+    if (empty($models)) {
       $element['empty'] = [
         '#markup' => $this->t('<p>No models found yet. Save the server first, then models will be discovered automatically.</p>'),
       ];
       return $element;
     }
 
-    $overrides = $this->state->get("{$prefix}.model_overrides", []);
-    $detected = $this->state->get("{$prefix}.model_types", []);
     $type_options = array_map([$this, 't'], self::OPERATION_TYPE_LABELS);
 
-    foreach ($all_models as $machine_id => $raw_id) {
-      $auto_types = $detected[$machine_id] ?? ['chat'];
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model */
+    foreach ($models as $model) {
+      $raw_id = $model->getRawModelId();
+      $auto_types = $model->getDetectedOperationTypes() ?: ['chat'];
       $auto_label = implode(', ', $auto_types);
+      $current_overrides = $model->getOperationTypes();
 
-      $element[$machine_id] = [
+      // Use model entity id as form key (stable).
+      $key = $model->id();
+
+      $element[$key] = [
         '#type'          => 'checkboxes',
         '#title'         => $raw_id,
         '#description'   => $this->t('Auto-detected: <em>@types</em>', ['@types' => $auto_label]),
         '#options'       => $type_options,
-        '#default_value' => $overrides[$machine_id] ?? [],
+        '#default_value' => $current_overrides,
       ];
     }
 
@@ -245,7 +245,7 @@ class LlamaCppServerForm extends EntityForm {
 
     // Discover models so edit form and AI settings can use them.
     try {
-      $provider = $this->aiProviderManager->createInstance('llama_cpp:' . $server->id());
+      $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
       $provider->getConfiguredModels();
     }
     catch (\Throwable) {
@@ -269,27 +269,20 @@ class LlamaCppServerForm extends EntityForm {
   }
 
   /**
-   * Persists manual model capability overrides to State.
-   *
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The current form state.
-   * @param string $server_id
-   *   The server machine name.
+   * Persists manual model capability overrides to llama_cpp_model entities.
    */
   protected function saveModelOverrides(FormStateInterface $form_state, string $server_id): void {
-    $prefix = "ai_provider_llama_cpp.server.{$server_id}";
-    $all_models = $this->state->get("{$prefix}.models", []);
-    $overrides = [];
+    $model_storage = $this->entityTypeManager->getStorage('llama_cpp_model');
+    $models = $model_storage->loadByProperties(['server_id' => $server_id]);
 
-    foreach (array_keys($all_models) as $machine_id) {
-      $raw_values = $form_state->getValue(['overrides', $machine_id], []);
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model */
+    foreach ($models as $model) {
+      $key = $model->id();
+      $raw_values = $form_state->getValue(['overrides', $key], []);
       $selected = array_values(array_filter($raw_values));
-      if (!empty($selected)) {
-        $overrides[$machine_id] = $selected;
-      }
+      $model->setOperationTypes($selected);
+      $model->save();
     }
-
-    $this->state->set("{$prefix}.model_overrides", $overrides);
   }
 
 }

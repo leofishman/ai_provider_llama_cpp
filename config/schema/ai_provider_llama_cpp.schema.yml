@@ -41,3 +41,32 @@ ai_provider_llama_cpp.server.*:
     model_filter:
       type: string
       label: 'Model Filter'
+
+ai_provider_llama_cpp.model.*:
+  type: config_entity
+  label: 'llama.cpp Model'
+  mapping:
+    id:
+      type: string
+      label: 'ID'
+    label:
+      type: label
+      label: 'Label'
+    server_id:
+      type: string
+      label: 'Server ID'
+    raw_model_id:
+      type: string
+      label: 'Raw Model ID'
+    detected_operation_types:
+      type: sequence
+      label: 'Detected Operation Types'
+      sequence:
+        type: string
+        label: 'Operation Type'
+    operation_types:
+      type: sequence
+      label: 'Operation Types (overrides)'
+      sequence:
+        type: string
+        label: 'Operation Type'

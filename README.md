@@ -1,12 +1,14 @@
 # AI Provider: llama.cpp (Multi-instance)
 
-A powerful, multi-instance provider for the [AI module](https://www.drupal.org/project/ai).
+A powerful multi-backend provider for the [AI module](https://www.drupal.org/project/ai).
 While built with [llama.cpp](https://github.com/ggml-org/llama.cpp) as its primary focus, 
 it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, vLLM, LiteLLM, LM Studio).
 
+This module uses **config entities for servers (`llama_cpp_server`) and models (`llama_cpp_model`)** + a single stable plugin (`llama_cpp`). This makes it easy to evolve toward additional specific provider plugins over time.
+
 ## Features
 
-- **Multi-instance Architecture**: Configure multiple servers simultaneously (e.g. a GPU server for chat, a local instance for embeddings, and an Ollama instance for moderation). Each server appears as an independent provider in Drupal.
+- **Multi-instance Architecture**: Configure multiple servers simultaneously (e.g. a GPU server for chat, a local instance for embeddings, and an Ollama instance for moderation). Servers are stored as `llama_cpp_server` config entities. Individual models are stored as `llama_cpp_model` config entities (migrated from State). All models are exposed through the single `llama_cpp` AI provider plugin (no more plugin derivatives). Model keys are unique across servers.
 - **Supported Operations**:
   - **Chat** completions (`/v1/chat/completions`)
   - **Embeddings** (`/v1/embeddings`)
@@ -23,12 +25,17 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 ## Roadmap / Future (1.3.x)
 
-### Planned for the next major release
+### Completed in 1.3.x refactor
 
-- **Migrate model data from State to Config Entities**:
-  1. **Views Integration**: Expose discovered models and overrides as editable/filterable Views.
-  2. **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
-  3. **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
+- **Model data migrated from State to Config Entities** (`llama_cpp_model`):
+  - Discovered models + overrides live as exportable config entities.
+  - This enables future Views, per-model guardrails, token limits, etc.
+
+### Planned (post 1.3)
+
+- **Views Integration**: Expose discovered models and overrides as editable/filterable Views.
+- **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
+- **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
 
 - **Configurable & extensible moderation policies**:
   - Make ShieldGemma's safety guidelines configurable per server, instead of the four hardcoded official policies (same pattern as `model_filter`).
@@ -36,17 +43,18 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 - **Improved test coverage**:
   - Expand Kernel tests for model discovery, filtering, moderation parsers, rerank, and text-to-image paths.
-  - Add more scenarios for multi-server setups and edge cases in derivatives.
+  - Add more scenarios for multi-server setups and edge cases with model entities.
 
 - **Admin UI enhancements**:
   - Add a "Test connection" / status action directly from the server listing (beyond form validation).
   - Show last discovered model count and basic capability summary in the server list.
 
 - **Architecture & DX improvements**:
-  - Extract model cache management and discovery logic into a dedicated service for better testability and reuse.
+  - Model entities + single plugin (no derivers) already implemented.
+  - Extract model cache management and discovery logic into a dedicated service (future).
   - Evaluate additional per-server configuration options (e.g. default model per operation type).
 
-Stabilization work for reliable multi-server support, Key module integration, model filtering, and robust derivative handling was completed during the 1.2.x cycle.
+Stabilization work for reliable multi-server support, Key module integration, model filtering, and the move to config entities for models (removing plugin derivers) was completed during the 1.3 refactor.
 
 ## Requirements
 
@@ -67,7 +75,7 @@ drush pm:enable ai_provider_llama_cpp
 ## Configuration
 
 Navigate to **Administration → Configuration → AI → llama.cpp Servers**
-(`/admin/config/ai/providers/llama-cpp`). From here you can add and manage multiple server instances. 
+(`/admin/config/ai/providers/llama-cpp`). From here you can add and manage multiple server (backend) instances. Discovered models become `llama_cpp_model` config entities. You select servers/models under the `llama_cpp` provider in the AI configuration. 
 
 For each server, you can configure:
 - **Host Name & Port** — e.g. `http://127.0.0.1:8080`, or `http://host.docker.internal` for DDEV.
@@ -89,7 +97,7 @@ One of the strongest features of this module is running **several servers at onc
 - Dedicated embeddings server (vLLM or Ollama)
 - Lightweight moderation server (Llama Guard 3 or ShieldGemma)
 
-Each configured server appears as an independent provider (e.g. `llama_cpp:chat`, `llama_cpp:embeddings`).
+Models are selected under the single `llama_cpp` provider. Each model internally knows which server backend it came from.
 
 ### Operation types and model overrides
 
