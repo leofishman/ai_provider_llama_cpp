@@ -1,218 +1,298 @@
-# Design: Evolving ai_provider_llama_cpp toward a Universal Provider (2.0)
+# Design Document: ai_provider_llama_cpp 2.0 — Universal Provider Evolution
 
-**Status**: Draft / Work in Progress  
+**Status**: Active Draft  
 **Branch**: `2.0`  
-**Goal**: Turn the current powerful but specialized multi-instance llama.cpp provider into a solid foundation for a more universal AI provider module, while keeping a simple evolution and migration story.
-
-## 1. Motivation
-
-The current `ai_provider_llama_cpp` (1.2.x) has several strengths that users love:
-
-- True multi-instance support via config entities (`llama_cpp_server`) + derivers.
-- Excellent auto-detection of model capabilities (CLI flags, Hugging Face `pipeline_tag`, heuristics).
-- Support for non-standard OpenAI-compatible operations: rerank, moderation (with custom parsers), speech-to-text, text-to-image.
-- Model filtering and per-model overrides.
-- Works with llama.cpp, Ollama, vLLM, LiteLLM, LM Studio, and many others.
-
-However, the current architecture has limitations for long-term growth:
-
-- Heavy reliance on **plugin derivers** (`llama_cpp:server_id`). This makes the module feel special-cased.
-- Model discovery and capability data live primarily in **Drupal State**, not config entities (harder to export, view, version, or attach behavior to).
-- One monolithic plugin + deriver makes it harder to add truly different provider types cleanly.
-- Tight coupling to `OpenAiBasedProviderClientBase` for most paths.
-
-The vision for 2.x is:
-> Support **OpenAI-compatible backends** extremely well (current strength) + provide a clean path to add **specific provider plugins** over time (Hugging Face native tasks, Replicate, Fireworks, Groq, etc.), all within a unified experience for site builders.
-
-We treat the current module as the **evolution** of `ai_provider_llama_cpp`. We will only consider a full rename (e.g. `ai_universal_provider`) once the 2.x line feels solid and stable.
-
-## 2. Core Architectural Principles (2.0)
-
-1. **Config entities are the source of truth for multiplicity**
-   - `llama_cpp_server` (backend/connection configuration).
-   - `llama_cpp_model` (discovered or manually registered models + their capabilities).
-
-2. **Specific plugins instead of heavy derivation**
-   - One stable plugin ID per *provider type* (`llama_cpp` for OpenAI-compatible today).
-   - No more `llama_cpp:server123` derivatives in the plugin registry.
-   - Different provider types = different `#[AiProvider]` classes in the future.
-
-3. **Models are first-class**
-   - Every model that should appear in the AI module is represented by a `llama_cpp_model` config entity.
-   - This enables Views, per-model configuration later, export, and better DX.
-
-4. **Runtime resolution instead of plugin identity**
-   - The plugin instance learns which server to talk to by looking at the chosen model (or explicit configuration).
-   - This decouples "which provider plugin" from "which physical backend".
-
-5. **Phased abstraction**
-   - Keep leveraging `OpenAiBasedProviderClientBase` for the compatible path (pragmatic).
-   - Gradually introduce shared traits/services so new specific providers can share code where it makes sense.
-
-## 3. Entities
-
-### `llama_cpp_server` (existing, evolved)
-- Connection details (host, port, api_key via Key module, timeout).
-- Explicit operation type restrictions (optional).
-- Model filter (glob patterns).
-- Still the unit of "a backend I manage".
-
-### `llama_cpp_model` (new in 2.0)
-- `server_id` (reference to the backend).
-- `raw_model_id` (what we actually send to the API).
-- `detected_operation_types`.
-- `operation_types` (user overrides; empty = use detected).
-- Label (can be enriched with server name).
-
-Discovery flow populates and updates these entities. Stale models can be cleaned when a server no longer reports them.
-
-## 4. Provider Plugins
-
-- `LlamaCppProvider` (ID: `llama_cpp`) — OpenAI-compatible implementation.
-- In the future we can add:
-  - `HuggingFaceProvider` (native HF Inference tasks)
-  - `LiteLLMProvider` (if it needs special treatment)
-  - etc.
-
-Each plugin is responsible for:
-- Reporting the models it can serve (from its model entities).
-- Executing operations (resolving the correct backend for the chosen model).
-
-This is the main departure from the 1.x deriver approach.
-
-## 5. Migration Paths
-
-We aim for **simple, mostly automatic** migrations with minimal user intervention.
-
-### 5.1 From ai_provider_llama_cpp (1.2.x → 2.x)
-
-**Primary mechanism**: Update hooks + on-save discovery.
-
-**Steps performed automatically** (in `ai_provider_llama_cpp_update_10203` and follow-ups):
-
-1. Ensure the `llama_cpp_model` entity type is installed.
-2. Rewrite entries in `ai.settings:default_providers`:
-   - `llama_cpp:some-server` → `llama_cpp`
-3. For every existing `llama_cpp_server`:
-   - Read old State data (`ai_provider_llama_cpp.server.{id}.models`, `.model_types`, `.model_overrides`).
-   - Create or update corresponding `llama_cpp_model` entities.
-   - Store detected vs override types.
-4. (Optional future hook) Trigger a background or on-demand discovery to refresh from the actual servers.
-
-**User actions required** (documented clearly):
-
-- Run `drush updb`.
-- Go to the llama.cpp Servers admin page and **re-save** each server (this forces fresh discovery and model entity population).
-- Visit the AI module configuration (or wherever providers are assigned).
-- Re-select models for any operation types that used the old derived providers (the old model IDs no longer exist).
-- Test the affected features.
-
-**Model ID change note**:
-Old model keys were local to each derived provider (e.g. `llama3`).
-New keys are namespaced: `server-id__machine-name` (e.g. `ollama__llama3`).
-The raw model name sent to the backend stays the same.
-
-**Rollback**:
-Keep the 1.2.x version installed in parallel during transition if needed (the old provider IDs will simply stop appearing after the update).
-
-### 5.2 Simple Migration Path from *Any* Other AI Provider Module
-
-The goal is to give site builders a low-friction way to move to the universal module without losing their configuration.
-
-#### Category A: OpenAI-compatible providers (easiest)
-
-Examples: `ai_provider_openai`, custom LiteLLM setups, `ai_provider_azure`, many community modules.
-
-**Simple path**:
-
-1. Enable `ai_provider_llama_cpp` (2.x) alongside the old provider.
-2. Create a new `llama_cpp_server` entity pointing to the **same host + API key**.
-3. Run discovery (save the server).
-4. In the AI configuration screens, switch the provider from the old one to `llama.cpp (OpenAI-compatible)` and pick the same (or equivalent) models.
-5. Once validated, disable the old provider module.
-
-No data migration is strictly required because the backend is the same. The universal module just becomes the new management layer.
-
-#### Category B: Providers with native / different APIs
-
-Examples: `ai_provider_huggingface` (for non-chat tasks), `ai_provider_anthropic`, `ai_provider_bedrock`, Replicate, etc.
-
-**Recommended simple path** (two-phase):
-
-**Phase 1 – Side-by-side (recommended for safety)**
-- Keep the original provider active for the operation types it handles well.
-- Use the universal module only for the backends it supports better (or for new use cases).
-- Gradually move models/operation types over time.
-
-**Phase 2 – Adoption (when a specific plugin exists)**
-- For providers that can be expressed as "a server + models", create server entities.
-- Future specific plugins can read or import from the original module's configuration if an integration point is provided.
-- Provide a small "Import from other provider" form or Drush command that:
-  - Reads the other module's config.
-  - Creates the equivalent `llama_cpp_server` (or equivalent for the new plugin).
-  - Creates `llama_cpp_model` records with appropriate operation types.
-  - Optionally rewrites `ai.settings:default_providers`.
-
-**For module authors** (longer term):
-We can publish an event or a service interface that other providers can implement to expose their models in a standardized way. The universal module can then "adopt" them.
-
-#### Category C: Completely different paradigm
-
-Some providers are not really "servers" (e.g. fully managed cloud with no stable endpoint concept). In those cases the path is:
-- Implement a dedicated specific plugin under the universal module umbrella.
-- Use the same model entity pattern where it makes sense, or extend it.
-- Offer a one-time migration assistant.
-
-## 6. Phased Implementation Roadmap (on 2.0 branch)
-
-| Phase | Focus | Status (on 2.0) |
-|-------|-------|-----------------|
-| 0     | Remove derivers, introduce `llama_cpp_model` entities, fix provider resolution | Done (initial WIP commit) |
-| 1     | Stabilize: better labels, discovery reliability, update hooks, docs | In progress |
-| 2     | Extract common OpenAI-compatible logic into reusable pieces | Planned |
-| 3     | Improve admin UX (model listing, test connection, bulk import) | Planned |
-| 4     | Add a second concrete provider plugin (e.g. basic HF router or another compat) as proof | Planned |
-| 5     | Evaluate module rename + package split if the vision is clearly more universal than "llama.cpp" | Decision later |
-
-## 7. Compatibility & Breaking Changes
-
-- **Breaking**: Derived plugin IDs disappear (`llama_cpp:*` no longer exist).
-- **Breaking**: Model identifiers change format.
-- **Non-breaking for most users**: The actual API calls and supported operations remain the same.
-- Sites using the module for many specialized servers will feel the model selection change the most.
-
-We will provide clear upgrade documentation and, if possible, a small Drush command to help list "old vs new" model mappings.
-
-## 8. Open Questions
-
-- Should we eventually rename the config entity types (`llama_cpp_server` → `ai_provider_backend`, etc.)? This has migration cost.
-- How far do we want to abstract away from `OpenAiBasedProviderClientBase` in 2.x?
-- Should model entities live in a shared namespace so multiple provider plugins can contribute to the same model registry?
-- Do we want a central "AI Provider Backends" admin section instead of per-module sections?
-
-## 9. Success Criteria for "Decent Enough to Rename"
-
-- The OpenAI-compatible path is at least as good as 1.2.x (or better).
-- Adding a new specific provider is clearly easier than maintaining a completely separate module.
-- Migration stories for both the llama.cpp module and at least two other popular providers are documented and tested.
-- No deriver usage in the core flow.
-- Good test coverage for the new entity + plugin model.
-
-## Appendix: How the AI Module Sees Providers (2.0)
-
-- The `ai.provider` plugin manager sees `llama_cpp` (and future plugins) as normal plugins.
-- Models returned by `getConfiguredModels()` use the `llama_cpp_model` entity IDs as keys.
-- When the AI module calls `chat($input, $model_id, ...)`, the provider looks up the model entity, loads the referenced server, and talks to that backend.
-- Multiple physical servers can happily coexist behind a single plugin ID.
+**Last Updated**: 2026-06-23  
+**Maintainer**: leofishman (with community input)  
+**Target**: Evolution of the existing `ai_provider_llama_cpp` module (rename decision deferred)
 
 ---
 
-This document lives on the `2.0` branch and will evolve together with the code.
+## Executive Summary
 
-**Next steps (suggested)**:
-- Stabilize the current implementation on this branch.
-- Flesh out the update hooks and migration tests.
-- Improve model labels and the overrides UI.
-- Document the upgrade path in `README.md`.
+This document defines the architectural direction for the 2.0 line of `ai_provider_llama_cpp`.
 
-Contributions and feedback on this design are welcome.
+**Core idea**: Transform the module from a "llama.cpp + derivers" specialized provider into a **strong, multi-backend foundation** that:
+
+- Excels at OpenAI-compatible servers (current killer feature).
+- Uses **config entities** for servers and models (instead of State + heavy derivers).
+- Allows adding **specific provider plugins** over time without architectural pain.
+- Provides clear, low-friction migration paths from the current module **and from other AI provider modules**.
+
+We treat `2.0` as an **in-place evolution** of the existing module for now. Renaming (e.g. to `ai_universal_provider` or `ai_provider_compat`) will be evaluated only after the foundation is solid.
+
+---
+
+## 1. Motivation & Problems with 1.x
+
+### Current Strengths (keep and improve)
+- Excellent multi-server support (different servers for different tasks).
+- Sophisticated model capability detection.
+- First-class support for advanced operations (rerank, moderation with parsers, speech-to-text, text-to-image).
+- Works with a huge ecosystem (llama.cpp, Ollama, vLLM, LiteLLM, LM Studio, etc.).
+
+### Problems to Solve
+- **Derivers as the multiplicity mechanism** → Creates `llama_cpp:server-id` plugins. This is powerful but feels hacky and limits future growth.
+- **Models and overrides live in State** → Not exportable, not versionable, no Views, hard to attach metadata later.
+- **Single plugin identity** → Makes it difficult to cleanly support truly different provider families.
+- **Tight coupling** to `OpenAiBasedProviderClientBase`.
+- Hard for other developers to contribute "specific" backends.
+
+**Vision**:
+> One excellent OpenAI-compatible experience today + a clean path to become the home for multiple specific providers tomorrow.
+
+---
+
+## 2. Key Architectural Principles for 2.0
+
+1. **Config Entities are King**
+   - Servers (`llama_cpp_server`) remain the unit of backend configuration.
+   - Models become first-class config entities (`llama_cpp_model`).
+
+2. **Specific Plugins, Not Derivers**
+   - Stable plugin ID per *provider family* (e.g. `llama_cpp` for OpenAI-compatible).
+   - No more `llama_cpp:xxx` derivatives for normal usage.
+   - Future plugins (e.g. `huggingface_native`) are separate `#[AiProvider]` classes.
+
+3. **Runtime Backend Resolution**
+   - The chosen model (entity) tells the provider which server to use.
+   - Plugin instance + model ID → correct backend at execution time.
+
+4. **Pragmatic Abstraction**
+   - Leverage `OpenAiBasedProviderClientBase` heavily for the compatible path.
+   - Introduce traits/services gradually so new providers can share code.
+
+5. **Simple, Automatic Migrations**
+   - Update hooks should do the heavy lifting.
+   - Side-by-side operation during transition should be easy.
+
+---
+
+## 3. Entities (Current State on 2.0 + Future)
+
+### `llama_cpp_server`
+- Unchanged core purpose.
+- Stores host, port, Key reference, timeout, explicit operation types, model filter.
+- Acts as the "backend I control".
+
+### `llama_cpp_model` (new)
+Fields:
+- `id` (stable, e.g. `myserver__llama3_8b`)
+- `label` (human readable, e.g. "GPU Server / llama3-8b")
+- `server_id`
+- `raw_model_id`
+- `detected_operation_types[]`
+- `operation_types[]` (overrides — empty means use detected)
+
+These entities replace the old State keys:
+- `ai_provider_llama_cpp.server.*.models`
+- `.model_types`
+- `.model_overrides`
+
+Benefits: exportable, Views-ready, attachable (future guardrails per model, token limits, etc.).
+
+---
+
+## 4. Provider Plugin Model
+
+Current (on 2.0 branch):
+- Single `#[AiProvider(id: 'llama_cpp')]` class.
+- `getConfiguredModels()` returns models from all (or filtered) servers using entity IDs as keys.
+- Operation methods resolve the correct server from the model entity at call time.
+
+Future:
+- `OpenAiCompatibleProvider` (rename/refactor of current class if desired).
+- New dedicated plugins for non-compatible providers.
+
+---
+
+## 5. The Critical Dilemma: Drupal AI Core Version Support (1.2 vs 1.4)
+
+This is the most important strategic decision right now.
+
+### Current Reality (June 2026)
+- The original module declares `drupal/ai: ^1.2`.
+- Drupal AI 1.3 introduced **Guardrails** (major new concept).
+- Drupal AI 1.4.0 (very recent) is a "massive" release focused on:
+  - Extensibility (new plugin types: Automators, Agents skills, API Explorer, etc.)
+  - Advanced Guardrails
+  - Views Bulk Operations integration for AI
+  - Better enterprise/resilience features
+- Many production sites are still on 1.2.x or early 1.3.x.
+- Provider modules have historically targeted the lowest common denominator.
+
+### Options Analysis
+
+| Option                    | Pros                                                                 | Cons                                                                 | Recommendation |
+|---------------------------|----------------------------------------------------------------------|----------------------------------------------------------------------|----------------|
+| **Target ^1.2 only**     | Maximum compatibility. Largest possible user base. Simplest.        | Cannot use new 1.3/1.4 features (Guardrails, new extensibility points). Looks "old". | Short-term safe choice |
+| **Target ^1.4 only**     | Can integrate deeply with Guardrails, Automators, new plugin system. Modern. | Loses users on 1.2/1.3. Breaks many existing sites. Risk of low adoption. | Too aggressive for 2.0 |
+| **^1.2 + graceful 1.4+** | Best of both. Support old users. Use new features when available via `module_exists` / version checks. | Slightly more complex code. Need to decide what is "core" vs "1.4 bonus". | **Strongly recommended** |
+| **Drop 1.2 later (3.x)** | Clean break in a future major.                                      | Requires users to upgrade core AI module.                            | Future plan |
+
+### Recommended Strategy for 2.0
+
+**Primary target: `^1.2` (with notes for 1.3/1.4)**
+
+- Declare `"drupal/ai": "^1.2"` in `composer.json`.
+- Ensure all core functionality (multi-server, model entities, OpenAI-compatible operations) works on 1.2.
+- Add **optional integration points** for newer AI features:
+  - If AI 1.3+ Guardrails are present → expose our moderation models to the guardrail system.
+  - If new extensibility APIs exist in 1.4 → implement the new plugin types where it makes sense.
+- Document clearly: "Best experience on AI 1.4+. Fully functional on 1.2+."
+- Consider a later 2.1 or 3.0 bump of the minimum version once adoption of 1.4 is widespread.
+
+**Rationale**:
+- The unique value of this module (reliable multi-instance OpenAI-compatible + advanced ops) is valuable to people still on 1.2.
+- Guardrails and Automators are exciting, but they are **additive**. We can integrate without making them a hard requirement.
+- Migration friction is already high because of the deriver removal. Adding a core AI version bump on top would be painful.
+
+**Implications for this design**:
+- We should not rely on 1.4-only APIs in the base implementation.
+- We should design extension points that 1.4 features can plug into later.
+
+---
+
+## 6. Migration Paths (Simple by Design)
+
+We prioritize **automatic as much as possible** + clear user steps.
+
+### 6.1 From ai_provider_llama_cpp (1.2.x → 2.x on same module)
+
+**Automated (update hooks)**:
+1. Install `llama_cpp_model` entity type.
+2. Rewrite `ai.settings.default_providers`:
+   - Change any `llama_cpp:servername` → `llama_cpp`
+3. Migrate old State data into `llama_cpp_model` entities (per server).
+4. Preserve detected vs override operation types.
+
+**User steps** (must be documented in README + release notes):
+1. `composer update` + `drush updb`.
+2. Go to **Administration → AI → llama.cpp Servers** and **re-save every server** (forces fresh discovery).
+3. Go to AI configuration and re-assign providers/models where the old derived IDs were used.
+4. Test.
+
+**Model ID mapping**:
+- Old: `llama3`
+- New: `default__llama3` (or `serverid__machine_name`)
+- The actual model sent to the API (`raw_model_id`) does **not** change.
+
+**Rollback strategy**:
+Keep the previous version of the module available. Old derived provider IDs will simply disappear after the update.
+
+### 6.2 From Other AI Provider Modules (General Simple Path)
+
+#### A. OpenAI-compatible providers (`ai_provider_openai`, LiteLLM-based, etc.)
+
+**Easiest path — almost zero data migration**:
+1. Install the 2.x version of this module.
+2. Create a `llama_cpp_server` pointing to the exact same endpoint + credentials as the old provider.
+3. Save the server → models are discovered.
+4. In AI settings, switch the relevant operation types to use `llama.cpp (OpenAI-compatible)` + select models.
+5. Disable the old provider module.
+
+#### B. Native / non-compatible providers (`ai_provider_huggingface`, Anthropic, etc.)
+
+**Recommended two-phase approach**:
+
+**Phase 1 (safest)**: Run side-by-side.
+- Keep the original provider for the tasks it handles best.
+- Use this module for OpenAI-compatible workloads or new use cases.
+
+**Phase 2 (when ready)**:
+- Create server entities for any compatible parts.
+- For truly different providers: wait for (or contribute) a dedicated plugin in this module.
+- Long-term: offer an "Import" Drush command or form that reads the other module's configuration and creates equivalent server + model entities.
+
+#### C. Completely different paradigms
+
+Implement as a new specific plugin inside this module family and provide a one-time migration helper.
+
+---
+
+## 7. Detailed Architecture & Current Implementation Notes
+
+(See the code on the `2.0` branch for the current state of the refactor.)
+
+Key files changed in the initial refactor:
+- New entities: `LlamaCppModel`, `LlamaCppModelInterface`
+- `LlamaCppProvider` no longer uses a deriver
+- Server form now works with model entities instead of State
+- Update hook + uninstall logic updated
+- Runtime active server resolution via model lookup
+
+---
+
+## 8. Phased Roadmap
+
+| Phase | Goal                                      | Dependencies          | Target AI Core |
+|-------|-------------------------------------------|-----------------------|----------------|
+| 0     | Core refactor (no derivers + model entities) | —                     | 1.2+           |
+| 1     | Stabilization, migration hooks, docs, UX polish | Phase 0               | 1.2+           |
+| 2     | Extract reusable OpenAI-compatible base / traits | Phase 1               | 1.2+           |
+| 3     | Optional deep integration with AI 1.3 Guardrails | AI >=1.3              | 1.3+ (optional)|
+| 4     | Add second concrete provider plugin as validation | Phase 2               | 1.2+           |
+| 5     | Evaluate rename + broader "universal" positioning | Phase 4 + community   | TBD            |
+
+---
+
+## 9. Risks & Mitigations
+
+- **User confusion from changed provider/model IDs** → Excellent release notes + Drush helper to show old → new mapping.
+- **Adoption if we target only 1.4** → We are explicitly choosing broad 1.2 compatibility.
+- **Maintenance burden of supporting multiple AI core versions** → Keep new 1.4 features clearly optional and behind `if (\Drupal::moduleHandler()->moduleExists('ai') && version_compare(...))`.
+- **Entity ID strategy** → Using `server__machine` is pragmatic. We can evolve naming later with an update hook if needed.
+
+---
+
+## 10. Open Questions & Decisions
+
+**Decided**:
+- Primary minimum = AI ^1.2 for 2.0 line.
+- Keep using `llama_cpp_*` entity and plugin names for now (rename later).
+- Models use composite IDs (`server__machine`).
+
+**Still open**:
+- Should we expose a generic "AI Provider Backend" entity type that multiple provider plugins can share?
+- How should per-model guardrails (when we add them) interact with the core AI 1.3+ Guardrails system?
+- When (if ever) do we make 1.4 the minimum?
+
+---
+
+## 11. Success Criteria
+
+Before considering a rename or declaring 2.0 stable:
+- All existing 1.2.x functionality works at least as well.
+- Migration from the llama.cpp module is documented and tested via update hooks.
+- At least one non-trivial migration story from another provider module is documented.
+- No use of derivers for core multiplicity.
+- Clear compatibility statement regarding AI 1.2 vs 1.4.
+
+---
+
+## Appendix A: Glossary
+
+- **Deriver**: Drupal plugin mechanism that dynamically creates multiple plugin definitions from one base class.
+- **OpenAI-compatible**: Any server exposing `/v1/chat/completions`, `/v1/embeddings`, etc.
+- **Specific provider**: A plugin written for a particular vendor's native API rather than the OpenAI shim.
+
+---
+
+## Appendix B: How Providers Appear to the AI Module (2.0)
+
+1. `ai.provider` plugin manager only sees stable IDs (`llama_cpp`, future others).
+2. `getConfiguredModels()` returns an array where keys are `llama_cpp_model` entity IDs.
+3. When executing an operation, the provider resolves the server from the model entity ID.
+4. Multiple physical backends are hidden behind one plugin + many models.
+
+---
+
+**This document is the source of truth for the 2.0 effort.**
+
+Next actions after design agreement:
+- Improve and test the update/migration code on the `2.0` branch.
+- Expand test coverage for model entities.
+- Write clear upgrade documentation.
+- Decide on any 1.4-specific enhancements.
+
+Contributions, questions, and alternative viewpoints are very welcome.
