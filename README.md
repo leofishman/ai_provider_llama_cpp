@@ -6,6 +6,8 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 This module uses **config entities for servers (`llama_cpp_server`) and models (`llama_cpp_model`)** + a single stable plugin (`llama_cpp`). This makes it easy to evolve toward additional specific provider plugins over time.
 
+> **Important**: This work is happening on the `2.0` branch. See [DESIGN.md](DESIGN.md) for the full architectural design, roadmap, and **migration guides** from the current llama.cpp module and from other AI provider modules.
+
 ## Features
 
 - **Multi-instance Architecture**: Configure multiple servers simultaneously (e.g. a GPU server for chat, a local instance for embeddings, and an Ollama instance for moderation). Servers are stored as `llama_cpp_server` config entities. Individual models are stored as `llama_cpp_model` config entities (migrated from State). All models are exposed through the single `llama_cpp` AI provider plugin (no more plugin derivatives). Model keys are unique across servers.
@@ -54,7 +56,9 @@ This module uses **config entities for servers (`llama_cpp_server`) and models (
   - Extract model cache management and discovery logic into a dedicated service (future).
   - Evaluate additional per-server configuration options (e.g. default model per operation type).
 
-Stabilization work for reliable multi-server support, Key module integration, model filtering, and the move to config entities for models (removing plugin derivers) was completed during the 1.3 refactor.
+See [DESIGN.md](DESIGN.md) for the complete 2.0 design, including detailed migration paths.
+
+Stabilization work for reliable multi-server support, Key module integration, model filtering, and the move to config entities for models (removing plugin derivers) was completed during the initial 2.0 work.
 
 ## Requirements
 
