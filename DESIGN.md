@@ -18,6 +18,7 @@ This document defines the architectural direction for the 2.0 line of `ai_provid
 - Uses **config entities** for servers and models (instead of State + heavy derivers).
 - Allows adding **specific provider plugins** over time without architectural pain.
 - Provides clear, low-friction migration paths from the current module **and from other AI provider modules**.
+- Is properly internationalized, with Spanish translation as a first-class deliverable.
 
 We treat `2.0` as an **in-place evolution** of the existing module for now. Renaming (e.g. to `ai_universal_provider` or `ai_provider_compat`) will be evaluated only after the foundation is solid.
 
@@ -66,6 +67,13 @@ We treat `2.0` as an **in-place evolution** of the existing module for now. Rena
    - Update hooks should do the heavy lifting.
    - Side-by-side operation during transition should be easy.
 
+6. **Internationalization from Day One**
+   - All user-facing strings (labels, descriptions, error messages, help texts, drush/update messages) **must** be marked for translation using Drupal's `t()` / `TranslatableMarkup`.
+   - Plugin labels, entity type labels, and form elements must be properly translatable.
+   - At minimum, provide a full Spanish (es) translation alongside English.
+   - Documentation (README, upgrade guides, DESIGN.md) should support Spanish (either directly or via community contributions).
+   - When adding specific provider plugins, their strings must follow the same i18n discipline.
+
 ---
 
 ## 3. Entities (Current State on 2.0 + Future)
@@ -78,7 +86,7 @@ We treat `2.0` as an **in-place evolution** of the existing module for now. Rena
 ### `llama_cpp_model` (new)
 Fields:
 - `id` (stable, e.g. `myserver__llama3_8b`)
-- `label` (human readable, e.g. "GPU Server / llama3-8b")
+- `label` (human readable, e.g. "GPU Server / llama3-8b") — translatable via config translation
 - `server_id`
 - `raw_model_id`
 - `detected_operation_types[]`
@@ -172,6 +180,8 @@ We prioritize **automatic as much as possible** + clear user steps.
 3. Go to AI configuration and re-assign providers/models where the old derived IDs were used.
 4. Test.
 
+All user-facing messages from update hooks and forms must be properly marked for translation (see section 7).
+
 **Model ID mapping**:
 - Old: `llama3`
 - New: `default__llama3` (or `serverid__machine_name`)
@@ -210,7 +220,59 @@ Implement as a new specific plugin inside this module family and provide a one-t
 
 ---
 
-## 7. Detailed Architecture & Current Implementation Notes
+## 7. Internationalization and Translations (i18n / l10n)
+
+### Why This Matters
+As we evolve toward a more universal provider (and potentially a broader audience), the module must be usable by non-English speakers from the beginning. Spanish is a hard requirement because of the large Drupal community in Spanish-speaking countries (Spain, Latin America).
+
+### Requirements
+
+- **All strings in code**:
+  - Use `$this->t('...')` in forms/classes or `new TranslatableMarkup(...)` in attributes and definitions.
+  - Never hardcode English strings that the user will see.
+  - Examples that must be translatable:
+    - Entity labels and descriptions (`llama_cpp_server`, `llama_cpp_model`)
+    - Plugin label: `'llama.cpp (OpenAI-compatible)'`
+    - Form field labels, descriptions, error messages
+    - Update hook messages (in `.install`)
+    - Drush command output
+    - Moderation parser messages, help texts
+
+- **Config entities**:
+  - Labels are translatable via Drupal's Config Translation module (if users enable it).
+  - We should not assume English-only labels for servers or models.
+
+- **Spanish translation (minimum)**:
+  - Provide a complete `es` translation.
+  - Target files: `translations/es.po` or contribute directly via https://localize.drupal.org
+  - At least the following must be translated:
+    - All UI strings
+    - Module info (name, description)
+    - Help texts and long descriptions in forms
+    - Key error/setup messages
+
+- **Documentation**:
+  - README.md should have a note that Spanish translation is maintained.
+  - Consider providing `README.es.md` or at least a Spanish section in the main README.
+  - This DESIGN.md should eventually have a Spanish version (or a translated summary).
+
+- **When adding new providers**:
+  - Any new `#[AiProvider]` plugin, custom operations, or moderation models must follow the same translation rules.
+  - Do not introduce English-only strings in new code.
+
+### Implementation Notes
+- In `LlamaCppProvider.php`, `LlamaCppServerForm.php`, entity definitions, and install hooks, audit all strings.
+- Use `StringTranslationTrait` where appropriate.
+- For complex messages (with placeholders), use proper `@placeholder` / `%placeholder` syntax.
+- Future specific plugins (e.g. native Hugging Face) should be developed with translation in mind from the first commit.
+
+### Testing
+- Enable Spanish language in a test site.
+- Verify that the module appears fully in Spanish (plugin name, server form, model overrides, messages).
+
+---
+
+## 8. Detailed Architecture & Current Implementation Notes
 
 (See the code on the `2.0` branch for the current state of the refactor.)
 
@@ -223,12 +285,12 @@ Key files changed in the initial refactor:
 
 ---
 
-## 8. Phased Roadmap
+## 9. Phased Roadmap
 
 | Phase | Goal                                      | Dependencies          | Target AI Core |
 |-------|-------------------------------------------|-----------------------|----------------|
 | 0     | Core refactor (no derivers + model entities) | —                     | 1.2+           |
-| 1     | Stabilization, migration hooks, docs, UX polish | Phase 0               | 1.2+           |
+| 1     | Stabilization, migration hooks, docs, UX polish + full Spanish translation | Phase 0               | 1.2+           |
 | 2     | Extract reusable OpenAI-compatible base / traits | Phase 1               | 1.2+           |
 | 3     | Optional deep integration with AI 1.3 Guardrails | AI >=1.3              | 1.3+ (optional)|
 | 4     | Add second concrete provider plugin as validation | Phase 2               | 1.2+           |
@@ -236,7 +298,7 @@ Key files changed in the initial refactor:
 
 ---
 
-## 9. Risks & Mitigations
+## 10. Risks & Mitigations
 
 - **User confusion from changed provider/model IDs** → Excellent release notes + Drush helper to show old → new mapping.
 - **Adoption if we target only 1.4** → We are explicitly choosing broad 1.2 compatibility.
@@ -245,7 +307,7 @@ Key files changed in the initial refactor:
 
 ---
 
-## 10. Open Questions & Decisions
+## 11. Open Questions & Decisions
 
 **Decided**:
 - Primary minimum = AI ^1.2 for 2.0 line.
@@ -259,7 +321,7 @@ Key files changed in the initial refactor:
 
 ---
 
-## 11. Success Criteria
+## 12. Success Criteria
 
 Before considering a rename or declaring 2.0 stable:
 - All existing 1.2.x functionality works at least as well.
@@ -267,6 +329,7 @@ Before considering a rename or declaring 2.0 stable:
 - At least one non-trivial migration story from another provider module is documented.
 - No use of derivers for core multiplicity.
 - Clear compatibility statement regarding AI 1.2 vs 1.4.
+- At least a complete and reviewed Spanish translation is available for all UI strings and documentation.
 
 ---
 
@@ -294,5 +357,6 @@ Next actions after design agreement:
 - Expand test coverage for model entities.
 - Write clear upgrade documentation.
 - Decide on any 1.4-specific enhancements.
+- Audit all strings and deliver a complete Spanish (es) translation.
 
 Contributions, questions, and alternative viewpoints are very welcome.
