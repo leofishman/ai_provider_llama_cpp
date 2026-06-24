@@ -133,12 +133,14 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
+    $instance->configuration = $configuration;
     $instance->state = $container->get('state');
     $instance->transliteration = $container->get('transliteration');
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->httpClientFactory = $container->get('http_client_factory');
     return $instance;
   }
+
 
   /**
    * Gets the server config entity.
@@ -233,6 +235,24 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   public function hasAuthentication(): bool {
     $server = $this->getServerEntity();
     return $server && !empty($server->getApiKey());
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function createClient(): \OpenAI\Client {
+    // If the server doesn't use authentication, we must still supply a dummy API
+    // key to the OpenAI client factory because its transporter requires one.
+    if (!$this->hasAuthentication()) {
+      $clientFactory = \OpenAI::factory();
+      $client = $clientFactory->withHttpClient($this->httpClient);
+      $client = $client->withApiKey('no-key');
+      if ($this->getEndpoint()) {
+        $client = $client->withBaseUri($this->getEndpoint());
+      }
+      return $client->make();
+    }
+    return parent::createClient();
   }
 
   /**
@@ -880,10 +900,21 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * id.
    */
   protected function buildModelEntityId(string $server_id, string $machine_name): string {
-    if ($machine_name === '') {
-      $machine_name = 'model';
+    // Sanitize both parts to guarantee only lower-case alphanumeric and underscores are kept.
+    $clean_server = preg_replace('@[^a-z0-9_]+@', '_', mb_strtolower($server_id));
+    $clean_server = trim(preg_replace('@_+@', '_', $clean_server), '_');
+
+    $clean_machine = preg_replace('@[^a-z0-9_]+@', '_', mb_strtolower($machine_name));
+    $clean_machine = trim(preg_replace('@_+@', '_', $clean_machine), '_');
+
+    if ($clean_machine === '') {
+      $clean_machine = 'model';
     }
-    $id = $server_id . '__' . $machine_name;
+    if ($clean_server === '') {
+      $clean_server = 'server';
+    }
+
+    $id = $clean_server . '__' . $clean_machine;
 
     // Leave generous headroom under the 250-char config name limit (the
     // "ai_provider_llama_cpp.model." prefix already consumes ~28 chars).

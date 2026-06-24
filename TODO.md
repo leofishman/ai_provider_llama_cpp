@@ -19,20 +19,20 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 0.5 — Harden the data model
 
-- [ ] Assert `getConfiguredModels()` is strictly **read-only** (no config writes on read paths)
+- [x] Assert `getConfiguredModels()` is strictly **read-only** (no config writes on read paths)
       — back it with a Kernel test that fails if discovery runs on read.
-- [ ] Ensure `discoverModels()` is the **only** write path (server save / explicit command).
-- [ ] Robust entity ID sanitization in `buildModelEntityId()`: `[a-z0-9_]`, length cap,
+- [x] Ensure `discoverModels()` is the **only** write path (server save / explicit command).
+- [x] Robust entity ID sanitization in `buildModelEntityId()`: `[a-z0-9_]`, length cap,
       deterministic hash suffix; test collisions and over-long raw model ids.
-- [ ] Complete **config schema** for both entities in `config/schema/` (every key typed and
+- [x] Complete **config schema** for both entities in `config/schema/` (every key typed and
       labelled) so `drush config:export` / config validation stays clean — see
       `drupal-configuration`. Discovered fields are config by decision but written only on
       action; verify no config diff appears on a cold read.
-- [ ] Confirm credentials stay in the **Key module** (never raw in config/State) per the
+- [x] Confirm credentials stay in the **Key module** (never raw in config/State) per the
       config/state/settings split in `drupal-configuration`.
-- [ ] Complete `update_10203` `model_id` remap coverage; report unmapped models in the
+- [x] Complete `update_10203` `model_id` remap coverage; report unmapped models in the
       update message for manual re-selection.
-- [ ] Decide whether `discoverModels()` should be exposed as a Drush command for re-discovery
+- [x] Decide whether `discoverModels()` should be exposed as a Drush command for re-discovery
       on new environments / CI (re-reconcile catalog without saving the form).
 
 ## Phase 1 — Stabilization, migration, docs, UX

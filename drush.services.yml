@@ -1,0 +1,8 @@
+services:
+  ai_provider_llama_cpp.commands:
+    class: Drupal\ai_provider_llama_cpp\Commands\LlamaCppCommands
+    arguments:
+      - '@entity_type.manager'
+      - '@ai.provider'
+    tags:
+      - { name: drush.command }

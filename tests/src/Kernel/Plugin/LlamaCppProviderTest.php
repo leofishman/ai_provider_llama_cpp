@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Plugin;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\Tests\ai_provider_llama_cpp\Kernel\Traits\HttpClientMockTrait;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -16,6 +17,8 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  */
 #[RunTestsInSeparateProcesses]
 final class LlamaCppProviderTest extends KernelTestBase {
+
+  use HttpClientMockTrait;
 
   /**
    * {@inheritdoc}
@@ -153,11 +156,92 @@ final class LlamaCppProviderTest extends KernelTestBase {
     $degenerate = $build->invoke($provider, 'gpu', $machine->invoke($provider, '///'));
     $this->assertSame('gpu__model', $degenerate);
 
+    // Direct passing of unsanitized strings (e.g. uppercase, spaces, special characters).
+    $unsanitized = $build->invoke($provider, 'GPU-Server!', 'My Awesome Model / v2');
+    $this->assertSame('gpu_server__my_awesome_model_v2', $unsanitized);
+
+    // Degenerate server ID yields a fallback.
+    $degenerate_server = $build->invoke($provider, '!!!', '///');
+    $this->assertSame('server__model', $degenerate_server);
+
     // Over-long names are capped and disambiguated deterministically.
     $long = str_repeat('a', 300);
     $capped = $build->invoke($provider, 'gpu', $long);
     $this->assertLessThanOrEqual(160, strlen($capped));
     $this->assertSame($capped, $build->invoke($provider, 'gpu', $long));
+
+    // Collision check for different over-long raw model IDs.
+    $long_diff = str_repeat('a', 299) . 'b';
+    $capped_diff = $build->invoke($provider, 'gpu', $long_diff);
+    $this->assertNotEquals($capped, $capped_diff);
+    $this->assertLessThanOrEqual(160, strlen($capped_diff));
+  }
+
+  /**
+   * Tests model discovery and filtering logic.
+   *
+   * Uses the HttpClientMockTrait to avoid duplicating MockHandler setup.
+   */
+  public function testModelDiscoveryAndFiltering(): void {
+    $etm = $this->container->get('entity_type.manager');
+    $server_storage = $etm->getStorage('llama_cpp_server');
+    $model_storage = $etm->getStorage('llama_cpp_model');
+
+    $server = $server_storage->create([
+      'id' => 'discover_test',
+      'label' => 'Discovery Test Server',
+      'host_name' => 'http://127.0.0.1',
+      'port' => '8080',
+      'api_key' => '',
+      'timeout' => 600,
+      'operation_types' => [],
+      'model_filter' => 'llama3*, !*old*',
+    ]);
+    $server->save();
+
+    // Queue a single response for the /v1/models call.
+    $modelsData = [
+      [
+        'id' => 'llama3-8b-instruct',
+        'object' => 'model',
+        'status' => ['args' => []],
+      ],
+      [
+        'id' => 'mistral-7b',
+        'object' => 'model',
+        'status' => ['args' => []],
+      ],
+      [
+        'id' => 'llama3-old',
+        'object' => 'model',
+        'status' => ['args' => []],
+      ],
+    ];
+
+    $this->mockHttpClientResponses([
+      $this->createModelsListResponse($modelsData),
+    ]);
+
+    /** @var \Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider $provider */
+    $provider = $this->container->get('ai.provider')
+      ->createInstance('llama_cpp', ['server_id' => 'discover_test']);
+
+    // Run discovery — this exercises loadClient() + OpenAI SDK models()->list().
+    $discovered = $provider->discoverModels();
+
+    // Only llama3-8b-instruct should survive the filter 'llama3*, !*old*'.
+    $this->assertCount(1, $discovered);
+    $this->assertArrayHasKey('discover_test__llama3_8b_instruct', $discovered);
+
+    $models = $model_storage->loadMultiple();
+    $this->assertCount(1, $models);
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model_entity */
+    $model_entity = reset($models);
+    $this->assertSame('discover_test__llama3_8b_instruct', $model_entity->id());
+    $this->assertSame('llama3-8b-instruct', $model_entity->getRawModelId());
   }
 
 }
+
+
+
