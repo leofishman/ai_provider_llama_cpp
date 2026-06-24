@@ -6,7 +6,21 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 This module uses **config entities for servers (`llama_cpp_server`) and models (`llama_cpp_model`)** + a single stable plugin (`llama_cpp`). This makes it easy to evolve toward additional specific provider plugins over time.
 
-> **Important**: This work is happening on the `2.0` branch. See [DESIGN.md](DESIGN.md) for the full architectural design, roadmap, and **migration guides** from the current llama.cpp module and from other AI provider modules.
+> **Important**: This work is happening on the `2.0` branch. See [DESIGN.md](DESIGN.md) for the full architectural design and [TODO.md](TODO.md) for the task list. There is no 1.3 release — development goes directly to 2.0.
+
+## Quick start
+
+```bash
+composer require drupal/ai_provider_llama_cpp
+drush pm:enable ai_provider_llama_cpp
+```
+
+Then add a backend at **Configuration → AI → llama.cpp Servers**
+(`/admin/config/ai/providers/llama-cpp`): set the **Host Name & Port** (e.g.
+`http://127.0.0.1:8080`), save the server to discover its models, and select those
+models per operation type under the `llama_cpp` provider in the AI module settings.
+
+Upgrading from 1.x? Run `drush updb` — see [Upgrading from 1.x](#upgrading-from-1x).
 
 ## Features
 
@@ -25,56 +39,56 @@ This module uses **config entities for servers (`llama_cpp_server`) and models (
 - **Robust Caching**: Model lists and detected capabilities are cached in Drupal State for resilience.
 - **Flexible Connection**: Configurable timeout per-server and optional API key support (for authenticated instances like vLLM).
 
-## Roadmap / Future (1.3.x)
+## Roadmap (2.0)
 
-### Completed in 1.3.x refactor
+There is no 1.3 release: development goes **directly to 2.0**. See [DESIGN.md](DESIGN.md)
+for the full architecture and [TODO.md](TODO.md) for the concrete task list.
 
-- **Model data migrated from State to Config Entities** (`llama_cpp_model`):
-  - Discovered models + overrides live as exportable config entities.
-  - This enables future Views, per-model guardrails, token limits, etc.
+### Done in the 2.0 refactor
 
-### Planned (post 1.3)
+- **Servers and models are config entities** (`llama_cpp_server`, `llama_cpp_model`):
+  discovered models + overrides are now exportable, versionable config (migrated from State).
+- **Single stable `llama_cpp` plugin, no derivers**: runtime resolves the backend server
+  from the selected model entity, so model keys stay unique across servers.
+- **Automatic migration** from 1.x via update hooks (`update_10201`–`update_10203`):
+  remaps `default_providers` from `llama_cpp:servername` → `llama_cpp` and auto-remaps
+  `model_id` to the new `servername__model` form so operations keep working without manual
+  re-selection.
+- Key module integration, per-server timeout/API key, and glob model filtering.
 
-- **Views Integration**: Expose discovered models and overrides as editable/filterable Views.
-- **Model Guardrails**: Natively attach pre-moderation models (LlamaGuard/ShieldGemma), regex sanitization rules, and output validators directly to specific models.
-- **Advanced Token Control**: Enforce hard token limits (`max_input_length`) per-model.
+### Planned for 2.0
 
-- **Configurable & extensible moderation policies**:
-  - Make ShieldGemma's safety guidelines configurable per server, instead of the four hardcoded official policies (same pattern as `model_filter`).
-  - Dispatch an event (e.g. `ModerationGuidelinesEvent`) so other modules can add or alter guidelines, with content/model/server context. Note: ShieldGemma is trained on its four official categories, so custom guidelines are less reliable.
+- **Harden the data model**: keep `getConfiguredModels()` strictly read-only (no config
+  writes on a read path), discovery only on explicit action, robust ID sanitization.
+- **Internationalization**: audit all interface strings for `t()` / `TranslatableMarkup`
+  and ship a generated `.pot` template. (Spanish `.po` follows via localize.drupal.org once
+  strings stabilize — not a 2.0 blocker.)
+- **Expanded test coverage**: model discovery, filtering, moderation parsers, rerank, and
+  text-to-image; more multi-server and migration edge cases.
+- **Migration & upgrade docs**: clear in-place upgrade guide plus paths from other AI
+  provider modules.
 
-- **Improved test coverage**:
-  - Expand Kernel tests for model discovery, filtering, moderation parsers, rerank, and text-to-image paths.
-  - Add more scenarios for multi-server setups and edge cases with model entities.
+### Future (post-2.0)
 
-- **Admin UI enhancements**:
-  - Add a "Test connection" / status action directly from the server listing (beyond form validation).
-  - Show last discovered model count and basic capability summary in the server list.
-
-- **Architecture & DX improvements**:
-  - Model entities + single plugin (no derivers) already implemented.
-  - Extract model cache management and discovery logic into a dedicated service (future).
-  - Evaluate additional per-server configuration options (e.g. default model per operation type).
-
-See [DESIGN.md](DESIGN.md) for the complete 2.0 design, including detailed migration paths.
-
-Stabilization work for reliable multi-server support, Key module integration, model filtering, and the move to config entities for models (removing plugin derivers) was completed during the initial 2.0 work.
+- **Views integration** for discovered models and overrides.
+- **Per-model guardrails**: attach pre-moderation models, sanitization rules, output
+  validators, and hard token limits (`max_input_length`) directly to models.
+- **Configurable & extensible moderation policies**: make ShieldGemma's safety guidelines
+  configurable per server and dispatch an event so other modules can alter them.
+- **Admin UX**: "Test connection" action and a model-count / capability summary in the
+  server list.
+- **Shared OpenAI-compatible base/trait** extracted for reuse by a future vendor-neutral
+  universal provider module (Track B in DESIGN.md), and optional deep integration with
+  AI 1.3+ Guardrails.
 
 ## Requirements
 
 - Drupal 10.2, 11 or 12.
 - [AI module](https://www.drupal.org/project/ai) ^1.2.
 - [Key module](https://www.drupal.org/project/key) ^1.18 (for credentials management).
-- A running OpenAI-compatible server (Ollama, vLLM, llama.cpp, LiteLLM, etc.).
-
-
-## Installation
-
-```bash
-composer require drupal/ai_provider_llama_cpp
-
-drush pm:enable ai_provider_llama_cpp
-```
+- A running OpenAI-compatible server. Setting one up is outside the scope of this module —
+  see the docs for [Ollama](https://ollama.com), [vLLM](https://docs.vllm.ai),
+  [llama.cpp](https://github.com/ggml-org/llama.cpp) or [LiteLLM](https://docs.litellm.ai).
 
 ## Configuration
 
@@ -86,6 +100,22 @@ For each server, you can configure:
 - **API Key** — Optional, required if your server enforces authentication.
 - **Timeout** — Configurable per-server (defaults to 600s).
 - **Operation Types & Model Overrides** — Assign specific roles to the server or manually override auto-detected capabilities per model.
+
+## Upgrading from 1.x
+
+2.0 replaces the per-server plugin derivatives (`llama_cpp:servername`) with a single
+`llama_cpp` provider plus `llama_cpp_model` config entities, and moves model data out of
+State. The upgrade is automatic:
+
+1. `composer update drupal/ai_provider_llama_cpp` then `drush updb`.
+2. The update hooks migrate State to model entities and remap your AI settings:
+   `llama_cpp:servername` → `llama_cpp`, with each `model_id` rewritten to the new
+   `servername__model` form. Most sites keep working with no manual change.
+3. Only models the hooks could not auto-map are reported in the update message — re-save
+   the relevant server (to re-run discovery) and re-select the model in the AI settings.
+
+See [DESIGN.md §6](DESIGN.md) for the full migration design, including paths from other AI
+provider modules.
 
 ## Compatible servers
 
