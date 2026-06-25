@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Update;
 
+use Drupal\Component\Utility\DeprecationHelper;
 use Drupal\KernelTests\KernelTestBase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -41,24 +42,42 @@ final class Update10201Test extends KernelTestBase {
    * Tests migration from single-server settings to config entities.
    */
   public function testUpdate10201MigratesLegacyConfig(): void {
-    $this->config('ai_provider_llama_cpp.settings')
-      ->set('host_name', 'http://127.0.0.1')
-      ->set('port', '9000')
-      ->save(TRUE);
+    DeprecationHelper::backwardsCompatibleCall(
+      \Drupal::VERSION,
+      '11.4.0',
+      fn() => $this->config('ai_provider_llama_cpp.settings')
+        ->set('host_name', 'http://127.0.0.1')
+        ->set('port', '9000')->save(),
+      fn() => $this->config('ai_provider_llama_cpp.settings')
+        ->set('host_name', 'http://127.0.0.1')
+        ->set('port', '9000')
+        ->save(TRUE)
+    );
 
     $state = $this->container->get('state');
     $state->set('ai_provider_llama_cpp.models', ['llama3' => 'llama3-8b']);
     $state->set('ai_provider_llama_cpp.model_types', ['llama3' => ['chat']]);
     $state->set('ai_provider_llama_cpp.model_overrides', []);
 
-    $this->config('ai.settings')
-      ->set('default_providers', [
-        'chat' => [
-          'provider_id' => 'llama_cpp',
-          'model_id' => 'llama3',
-        ],
-      ])
-      ->save(TRUE);
+    DeprecationHelper::backwardsCompatibleCall(
+      \Drupal::VERSION,
+      '11.4.0',
+      fn() => $this->config('ai.settings')
+        ->set('default_providers', [
+          'chat' => [
+            'provider_id' => 'llama_cpp',
+            'model_id' => 'llama3',
+          ],
+        ])->save(),
+      fn() => $this->config('ai.settings')
+        ->set('default_providers', [
+          'chat' => [
+            'provider_id' => 'llama_cpp',
+            'model_id' => 'llama3',
+          ],
+        ])
+        ->save(TRUE)
+    );
 
     ai_provider_llama_cpp_update_10201();
 

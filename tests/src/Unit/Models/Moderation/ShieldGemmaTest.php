@@ -7,6 +7,7 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Unit\Models\Moderation;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -24,6 +25,7 @@ final class ShieldGemmaTest extends UnitTestCase {
    * @covers ::responseIndicatesViolation
    * @dataProvider providerResponses
    */
+  #[DataProvider('providerResponses')]
   public function testResponseIndicatesViolation(string $response, bool $expected): void {
     $this->assertSame($expected, ShieldGemma::responseIndicatesViolation($response));
   }

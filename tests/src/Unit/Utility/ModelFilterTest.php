@@ -7,6 +7,7 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Unit\Utility;
 use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -24,6 +25,7 @@ final class ModelFilterTest extends UnitTestCase {
    * @covers ::matches
    * @dataProvider providerMatches
    */
+  #[DataProvider('providerMatches')]
   public function testMatches(string $model_id, string $pattern, bool $expected): void {
     $this->assertSame($expected, ModelFilter::matches($model_id, $pattern));
   }
