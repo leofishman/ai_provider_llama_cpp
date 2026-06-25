@@ -3,6 +3,7 @@
   "description": "llama.cpp provider implementation for the AI module for Drupal",
   "type": "drupal-module",
   "require": {
+    "php": "^8.3",
     "drupal/ai": "^1.2.0",
     "drupal/key": "^1.18"
   }

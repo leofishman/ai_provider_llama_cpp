@@ -112,7 +112,7 @@ Cross-cutting quality items aligned with the `ai_best_practices` skills.
 
 ## CI / release housekeeping
 
-- [ ] Add `OPT_IN_TEST_NEXT_MAJOR` to GitLab CI to validate Drupal 12 (carried over from 1.x).
+- [x] Add `OPT_IN_TEST_NEXT_MAJOR` to GitLab CI to validate Drupal 12 (carried over from 1.x).
 - [ ] GitLab CI (`.gitlab-ci.yml`) green: PHPUnit (Kernel + Functional), phpcs, phpstan —
       see `drupal-gitlab` for the issue-fork / MR workflow when contributing back.
 - [ ] Confirm `composer.json` `drupal/ai: ^1.2.0` and info.yml core requirement before tagging.

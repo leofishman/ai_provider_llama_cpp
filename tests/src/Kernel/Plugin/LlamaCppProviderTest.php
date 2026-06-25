@@ -6,6 +6,9 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Plugin;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\Tests\ai_provider_llama_cpp\Kernel\Traits\HttpClientMockTrait;
+use Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -15,6 +18,8 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * @group ai_provider_llama_cpp
  */
+#[CoversClass(LlamaCppProvider::class)]
+#[Group('ai_provider_llama_cpp')]
 #[RunTestsInSeparateProcesses]
 final class LlamaCppProviderTest extends KernelTestBase {
 

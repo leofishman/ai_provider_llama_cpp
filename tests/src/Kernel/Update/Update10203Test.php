@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Update;
 
 use Drupal\KernelTests\KernelTestBase;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -12,6 +14,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * @group ai_provider_llama_cpp
  */
+#[Group('ai_provider_llama_cpp')]
 #[RunTestsInSeparateProcesses]
 final class Update10203Test extends KernelTestBase {
 

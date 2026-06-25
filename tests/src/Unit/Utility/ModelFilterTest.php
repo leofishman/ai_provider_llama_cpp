@@ -6,6 +6,8 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Unit\Utility;
 
 use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests model filter glob matching.
@@ -14,6 +16,8 @@ use Drupal\Tests\UnitTestCase;
  *
  * @group ai_provider_llama_cpp
  */
+#[CoversClass(ModelFilter::class)]
+#[Group('ai_provider_llama_cpp')]
 final class ModelFilterTest extends UnitTestCase {
 
   /**

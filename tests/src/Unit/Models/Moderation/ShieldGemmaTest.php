@@ -6,6 +6,8 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Unit\Models\Moderation;
 
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests ShieldGemma prompt building and response parsing.
@@ -14,6 +16,8 @@ use Drupal\Tests\UnitTestCase;
  *
  * @group ai_provider_llama_cpp
  */
+#[CoversClass(ShieldGemma::class)]
+#[Group('ai_provider_llama_cpp')]
 final class ShieldGemmaTest extends UnitTestCase {
 
   /**
