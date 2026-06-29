@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Plugin;
 
+use Drupal\ai_provider_llama_cpp\Service\ModelCatalog;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\Tests\ai_provider_llama_cpp\Kernel\Traits\HttpClientMockTrait;
 use Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider;
@@ -135,49 +136,41 @@ final class LlamaCppProviderTest extends KernelTestBase {
    * Tests that model entity ids are sanitized to valid, unique config ids.
    */
   public function testModelEntityIdSanitization(): void {
-    // The AI module wraps providers in a ProviderProxy (forwarding via __call),
-    // so reflect out the real plugin to exercise its protected id helpers.
-    $proxy = $this->container->get('ai.provider')->createInstance('llama_cpp');
-    $plugin_ref = new \ReflectionProperty($proxy, 'plugin');
-    $plugin_ref->setAccessible(TRUE);
-    /** @var \Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider $provider */
-    $provider = $plugin_ref->getValue($proxy);
-
-    $machine = new \ReflectionMethod($provider, 'getMachineName');
-    $machine->setAccessible(TRUE);
-    $build = new \ReflectionMethod($provider, 'buildModelEntityId');
-    $build->setAccessible(TRUE);
+    // ID building + machine-name normalisation now live in the ModelCatalog
+    // service (extracted from the provider); both helpers are public there.
+    /** @var \Drupal\ai_provider_llama_cpp\Service\ModelCatalog $catalog */
+    $catalog = $this->container->get(ModelCatalog::class);
 
     // Slashes, dots and case are normalised; runs of separators collapse.
-    $this->assertSame('qwen_qwen2_5_7b_instruct_q4_k_m', $machine->invoke($provider, 'Qwen/Qwen2.5-7B-Instruct-Q4_K_M'));
-    $this->assertSame('llama3_8b', $machine->invoke($provider, 'llama3:8b'));
+    $this->assertSame('qwen_qwen2_5_7b_instruct_q4_k_m', $catalog->getMachineName('Qwen/Qwen2.5-7B-Instruct-Q4_K_M'));
+    $this->assertSame('llama3_8b', $catalog->getMachineName('llama3:8b'));
 
     // Resulting entity ids only contain [a-z0-9_] and the server separator.
-    $id = $build->invoke($provider, 'gpu', $machine->invoke($provider, 'Qwen/Qwen2.5-7B-Instruct'));
+    $id = $catalog->buildModelEntityId('gpu', $catalog->getMachineName('Qwen/Qwen2.5-7B-Instruct'));
     $this->assertSame('gpu__qwen_qwen2_5_7b_instruct', $id);
     $this->assertMatchesRegularExpression('/^[a-z0-9_]+$/', $id);
 
     // Degenerate (all-special) raw id still yields a valid id.
-    $degenerate = $build->invoke($provider, 'gpu', $machine->invoke($provider, '///'));
+    $degenerate = $catalog->buildModelEntityId('gpu', $catalog->getMachineName('///'));
     $this->assertSame('gpu__model', $degenerate);
 
     // Direct passing of unsanitized strings (e.g. uppercase, spaces, special characters).
-    $unsanitized = $build->invoke($provider, 'GPU-Server!', 'My Awesome Model / v2');
+    $unsanitized = $catalog->buildModelEntityId('GPU-Server!', 'My Awesome Model / v2');
     $this->assertSame('gpu_server__my_awesome_model_v2', $unsanitized);
 
     // Degenerate server ID yields a fallback.
-    $degenerate_server = $build->invoke($provider, '!!!', '///');
+    $degenerate_server = $catalog->buildModelEntityId('!!!', '///');
     $this->assertSame('server__model', $degenerate_server);
 
     // Over-long names are capped and disambiguated deterministically.
     $long = str_repeat('a', 300);
-    $capped = $build->invoke($provider, 'gpu', $long);
+    $capped = $catalog->buildModelEntityId('gpu', $long);
     $this->assertLessThanOrEqual(160, strlen($capped));
-    $this->assertSame($capped, $build->invoke($provider, 'gpu', $long));
+    $this->assertSame($capped, $catalog->buildModelEntityId('gpu', $long));
 
     // Collision check for different over-long raw model IDs.
     $long_diff = str_repeat('a', 299) . 'b';
-    $capped_diff = $build->invoke($provider, 'gpu', $long_diff);
+    $capped_diff = $catalog->buildModelEntityId('gpu', $long_diff);
     $this->assertNotEquals($capped, $capped_diff);
     $this->assertLessThanOrEqual(160, strlen($capped_diff));
   }
@@ -247,6 +240,3 @@ final class LlamaCppProviderTest extends KernelTestBase {
   }
 
 }
-
-
-

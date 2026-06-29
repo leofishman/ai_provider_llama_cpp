@@ -25,8 +25,7 @@ use Psr\Http\Message\ResponseInterface;
 trait HttpClientMockTrait {
 
   /**
-   * Replaces the 'http_client_factory' service with one that returns
-   * a Guzzle client backed by MockHandler.
+   * Replaces 'http_client_factory' with a MockHandler-backed Guzzle client.
    *
    * @param array<int, ResponseInterface|\Exception> $responses
    *   List of responses (or exceptions) to return in order.
@@ -48,7 +47,8 @@ trait HttpClientMockTrait {
    * @param array $data
    *   The value for the 'data' key in the OpenAI-style list response.
    *
-   * @return ResponseInterface
+   * @return \Psr\Http\Message\ResponseInterface
+   *   A 200 JSON response wrapping $data in an OpenAI-style list envelope.
    */
   protected function createModelsListResponse(array $data): ResponseInterface {
     $payload = [

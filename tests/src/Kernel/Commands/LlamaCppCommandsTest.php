@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Commands;
 
+use Symfony\Component\Yaml\Yaml;
 use Drupal\ai_provider_llama_cpp\Commands\LlamaCppCommands;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\Tests\ai_provider_llama_cpp\Kernel\Traits\HttpClientMockTrait;
@@ -34,13 +35,28 @@ final class LlamaCppCommandsTest extends KernelTestBase {
   ];
 
   /**
-   * Tests that the Drush command service is registered via drush.services.yml.
+   * Tests that the Drush command service is declared and wirable.
+   *
+   * Drush.services.yml is loaded by Drush, not by the Drupal kernel, so the
+   * service is not present in the kernel test container. Instead we assert the
+   * declaration exists and its constructor args resolve from the container.
    */
   public function testDrushCommandServiceIsRegistered(): void {
-    $this->assertTrue(
-      $this->container->has('ai_provider_llama_cpp.commands'),
-      'The Drush command service must be registered in drush.services.yml.'
+    $yaml = Yaml::parseFile(
+      \Drupal::service('extension.list.module')->getPath('ai_provider_llama_cpp') . '/drush.services.yml'
     );
+    $this->assertArrayHasKey('ai_provider_llama_cpp.commands', $yaml['services']);
+    $this->assertSame(
+      LlamaCppCommands::class,
+      $yaml['services']['ai_provider_llama_cpp.commands']['class']
+    );
+
+    // The declared constructor args must resolve from the container.
+    $command = new LlamaCppCommands(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('ai.provider')
+    );
+    $this->assertInstanceOf(LlamaCppCommands::class, $command);
   }
 
   /**

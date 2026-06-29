@@ -39,17 +39,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [ ] Expand test coverage (prefer **Kernel/Functional** over Unit — see
       `drupal-automated-testing`; use required PHPUnit attributes `#[Group]` / `#[CoversClass]`):
-  - [ ] Model discovery + filtering edge cases (glob allow/deny, `!*old*`).
-  - [ ] Moderation parsers (LlamaGuard3 + ShieldGemma multi-policy).
-  - [ ] Rerank and text-to-image operation paths.
+  - [x] Model discovery + filtering edge cases (glob allow/deny, `!*old*`).
+  - [x] Moderation parsers (LlamaGuard3 + ShieldGemma multi-policy).
+  - [~] Capability detection (args + name heuristics) covered by `ModelCatalogTest`;
+        end-to-end rerank / text-to-image operation request paths still pending.
   - [ ] Multi-server setups (chat / embeddings / moderation on different backends).
   - [ ] Migration edge cases (unmappable model_id, multiple servers, missing entities).
   - [ ] **Functional** test for the server admin form (add / edit / delete, discovery on save,
         validation) — the form is UI + FAPI, so a `BrowserTestBase` test fits better than Unit.
-- [ ] Upgrade documentation:
-  - [ ] In-place 1.x → 2.0 upgrade guide (composer update + `drush updb` + re-select notes).
-  - [ ] Migration paths from other AI provider modules (OpenAI-compatible, native).
-  - [ ] Release notes covering changed provider/model IDs.
+- [~] Upgrade documentation:
+  - [x] In-place 1.x → 2.0 upgrade guide (composer update + `drush updb` + re-select notes) — see `UPGRADE.md`.
+  - [x] Migration paths from other AI provider modules (OpenAI-compatible, native) — see `UPGRADE.md`.
+  - [ ] Release notes covering changed provider/model IDs (condense from `UPGRADE.md` into the release).
 - [ ] Admin UX polish:
   - [ ] "Test connection" / status action from the server list (beyond form validation).
   - [ ] Show last discovered model count + capability summary in the server list.

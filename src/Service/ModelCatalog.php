@@ -2,7 +2,7 @@
 
 namespace Drupal\ai_provider_llama_cpp\Service;
 
-use Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface;
+use OpenAI\Client;
 use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
 use Drupal\Component\Transliteration\TransliterationInterface;
@@ -40,12 +40,14 @@ class ModelCatalog {
     protected StateInterface $state,
     protected ClientFactory $httpClientFactory,
     protected TransliterationInterface $transliteration,
-    protected ?KeyRepositoryInterface $keyRepository = null,
+    protected ?KeyRepositoryInterface $keyRepository = NULL,
   ) {}
 
   /**
    * Discovers models from a server and persists them as llama_cpp_model entities.
    *
+   * @param \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server
+   *   The server whose catalog is being (re-)discovered.
    * @param \OpenAI\Client|null $client
    *   Optional pre-configured OpenAI client (recommended, so auth + timeout are
    *   handled by the caller exactly as in normal operation).
@@ -53,10 +55,10 @@ class ModelCatalog {
    * @return array<string, string>
    *   Map of model entity id => raw model id.
    */
-  public function discoverModels(LlamaCppServerInterface $server, ?\OpenAI\Client $client = null): array {
+  public function discoverModels(LlamaCppServerInterface $server, ?Client $client = NULL): array {
     $serverId = $server->id();
 
-    if ($client === null) {
+    if ($client === NULL) {
       $client = $this->createOpenAiClient($server);
     }
 
@@ -178,6 +180,9 @@ class ModelCatalog {
     return $id;
   }
 
+  /**
+   * Reduces a string to a safe config id fragment ([a-z0-9_], collapsed).
+   */
   protected function sanitizeForId(string $value): string {
     $value = preg_replace('@[^a-z0-9_]+@', '_', mb_strtolower($value));
     return trim(preg_replace('@_+@', '_', $value), '_');
@@ -234,6 +239,9 @@ class ModelCatalog {
     return ['chat'];
   }
 
+  /**
+   * Extracts the HuggingFace repo id from a server's --hf-repo argument.
+   */
   protected function extractHfRepo(array $args): ?string {
     $index = array_search('--hf-repo', $args, TRUE);
     if ($index === FALSE || !isset($args[$index + 1])) {
@@ -242,6 +250,9 @@ class ModelCatalog {
     return explode(':', $args[$index + 1])[0];
   }
 
+  /**
+   * Looks up (and caches) a HuggingFace repo's pipeline_tag.
+   */
   protected function getHfPipelineTag(string $repo): ?string {
     $cache = $this->state->get('ai_provider_llama_cpp.hf_tag_cache', []);
     if (array_key_exists($repo, $cache)) {
@@ -266,7 +277,7 @@ class ModelCatalog {
   /**
    * Creates a minimal OpenAI client for discovery.
    */
-  protected function createOpenAiClient(LlamaCppServerInterface $server): \OpenAI\Client {
+  protected function createOpenAiClient(LlamaCppServerInterface $server): Client {
     $host = rtrim($server->getHostName(), '/');
     if ($port = $server->getPort()) {
       $host .= ':' . $port;
@@ -282,7 +293,6 @@ class ModelCatalog {
       }
     }
     // If no key or no repository, proceed without (some servers don't require it).
-
     return $factory->withHttpClient(
       $this->httpClientFactory->fromOptions(['timeout' => $server->getTimeout() ?: 600])
     )->withBaseUri($host . '/v1')->make();
