@@ -61,7 +61,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 2 — Reusable OpenAI-compatible base
 
-- [ ] Extract shared OpenAI-compatible logic into a trait/base (prep for Track B reuse).
+- [~] Extract shared OpenAI-compatible logic into a trait/base (prep for Track B reuse).
+  - [x] Moved model discovery, persistence, ID building, capability detection and HF lookup into dedicated `ModelCatalog` service.
+    - Review points in REVIEW-modelcatalog.md addressed:
+      - 🔴 Autowire fixed (explicit transliteration + key.repository).
+      - 🟠 Real client (with proper Key auth) now passed from provider; errors propagate to provider logger.
+  - [ ] Further extraction of server context, custom operation handlers (rerank/moderation), and chat wrappers.
 - [ ] Keep `OpenAiBasedProviderClientBase` leverage for the compatible path.
 
 ## Phase 2.5 — Spanish translation (non-blocking)

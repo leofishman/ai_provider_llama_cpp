@@ -2,3 +2,10 @@ services:
   Drupal\ai_provider_llama_cpp\Hook\AiProviderLlamaCppHooks:
     class: Drupal\ai_provider_llama_cpp\Hook\AiProviderLlamaCppHooks
     autowire: true
+
+  Drupal\ai_provider_llama_cpp\Service\ModelCatalog:
+    class: Drupal\ai_provider_llama_cpp\Service\ModelCatalog
+    autowire: true
+    arguments:
+      $transliteration: '@transliteration'
+      $keyRepository: '@key.repository'

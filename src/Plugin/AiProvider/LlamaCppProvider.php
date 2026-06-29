@@ -27,6 +27,7 @@ use Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface;
 use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
+use Drupal\ai_provider_llama_cpp\Service\ModelCatalog;
 use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
 use Drupal\Component\Transliteration\TransliterationInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -59,20 +60,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * All operation types this provider can support.
    */
   const SUPPORTED_OPERATION_TYPES = ['chat', 'embeddings', 'speech_to_text', 'rerank', 'moderation', 'text_to_image'];
-
-  /**
-   * Map from HuggingFace pipeline_tag to Drupal AI operation type id.
-   */
-  const HF_TAG_MAP = [
-    'text-generation'               => 'chat',
-    'text2text-generation'          => 'chat',
-    'feature-extraction'            => 'embeddings',
-    'sentence-similarity'           => 'embeddings',
-    'automatic-speech-recognition'  => 'speech_to_text',
-    'text-to-speech'                => 'text_to_speech',
-    'text-to-image'                 => 'text_to_image',
-    'text-ranking'                  => 'rerank',
-  ];
 
   /**
    * Map from moderation model name patterns to parser classes.
@@ -115,6 +102,11 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   protected ClientFactory $httpClientFactory;
 
   /**
+   * Model catalog service (handles discovery and listing).
+   */
+  protected ModelCatalog $modelCatalog;
+
+  /**
    * Cached model mapping (machine_id => raw_id).
    *
    * @var array
@@ -138,6 +130,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $instance->transliteration = $container->get('transliteration');
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->httpClientFactory = $container->get('http_client_factory');
+    $instance->modelCatalog = $container->get(ModelCatalog::class);
     return $instance;
   }
 
@@ -360,10 +353,9 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   public function getConfiguredModels(?string $operation_type = NULL, array $capabilities = []): array {
     $server = $this->getServerEntity();
-    $server_id = $server ? $server->id() : NULL;
+    $serverId = $server ? $server->id() : NULL;
 
-    // When $server_id is NULL this returns the union across all servers.
-    return $this->buildModelListForOperation($server_id, $operation_type);
+    return $this->modelCatalog->getModelsForServer($serverId, $operation_type);
   }
 
   /**
@@ -378,44 +370,21 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   public function discoverModels(): array {
     $server = $this->getServerEntity();
-    $server_id = $server ? $server->id() : NULL;
-    if (!$server_id) {
+    if (!$server) {
       return [];
     }
 
     try {
       $this->loadClient();
-      $response = $this->client->models()->list()->toArray();
+      return $this->modelCatalog->discoverModels($server, $this->client);
     }
     catch (\Throwable $e) {
       $this->loggerFactory->get('ai_provider_llama_cpp')->error(
         'Failed to get models from server: @message',
         ['@message' => $e->getMessage()]
       );
-      return $this->buildModelListForOperation($server_id, NULL);
+      return $this->modelCatalog->getModelsForServer($server->id());
     }
-
-    $filter_pattern = $server->getModelFilter() ?: '';
-    $discovered = [];
-
-    foreach ($response['data'] ?? [] as $model_entry) {
-      $raw_id = $model_entry['id'];
-      if ($filter_pattern !== '' && !ModelFilter::matches($raw_id, $filter_pattern)) {
-        continue;
-      }
-      $machine = $this->getMachineName($raw_id);
-      $model_entity_id = $this->buildModelEntityId($server_id, $machine);
-
-      $detected = $this->detectOperationTypes($model_entry);
-      $discovered[$model_entity_id] = [
-        'raw' => $raw_id,
-        'detected' => $detected,
-      ];
-    }
-
-    $this->persistModelsForServer($server_id, $discovered);
-
-    return $this->buildModelListForOperation($server_id, NULL);
   }
 
   /**
@@ -692,239 +661,13 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $this->client->models()->list();
   }
 
-  /**
-   * Detects the operation types supported by a model from server metadata.
-   *
-   * Detection cascade:
-   *  1. --embeddings flag in status.args
-   *  2. --reranking flag in status.args
-   *  3. HuggingFace API pipeline_tag (via --hf-repo in status.args)
-   *  4. Model name heuristics
-   *  5. Default: chat.
-   *
-   * @param array $model
-   *   A model entry from the /v1/models response.
-   *
-   * @return string[]
-   *   Array of operation type IDs.
-   */
-  protected function detectOperationTypes(array $model): array {
-    $args = $model['status']['args'] ?? [];
 
-    if (in_array('--embeddings', $args, TRUE)) {
-      return ['embeddings'];
-    }
-    if (in_array('--reranking', $args, TRUE)) {
-      return ['rerank'];
-    }
 
-    $hf_repo = $this->extractHfRepo($args);
-    if ($hf_repo) {
-      $tag = $this->getHfPipelineTag($hf_repo);
-      if ($tag && isset(self::HF_TAG_MAP[$tag])) {
-        return [self::HF_TAG_MAP[$tag]];
-      }
-    }
 
-    $name = strtolower($model['id']);
-    if (preg_match('/stable.diffusion|stable[-_]diffusion|sdxl|flux|dall[-_]e|sd[-_]cascade|flux[-_]dev/', $name)) {
-      return ['text_to_image'];
-    }
-    if (preg_match('/whisper|wav2vec|vosk/', $name)) {
-      return ['speech_to_text'];
-    }
-    if (preg_match('/rerank/', $name)) {
-      return ['rerank'];
-    }
-    if (preg_match('/llama.guard|llamaguard|shield.?gemma/', $name)) {
-      return ['moderation'];
-    }
-    if (preg_match('/embed|bge[-_]|nomic|e5[-_]|gte[-_]|minilm/', $name)) {
-      return ['embeddings'];
-    }
 
-    return ['chat'];
-  }
 
-  /**
-   * Extracts the HuggingFace repo identifier from a model's CLI args.
-   *
-   * @param array $args
-   *   The status.args array from the /v1/models response.
-   *
-   * @return string|null
-   *   The repo in "owner/name" format, or NULL if not found.
-   */
-  protected function extractHfRepo(array $args): ?string {
-    $index = array_search('--hf-repo', $args, TRUE);
-    if ($index === FALSE || !isset($args[$index + 1])) {
-      return NULL;
-    }
-    return explode(':', $args[$index + 1])[0];
-  }
 
-  /**
-   * Fetches the pipeline_tag for a HuggingFace repo, with State-based cache.
-   *
-   * @param string $repo
-   *   The HuggingFace repo in "owner/name" format.
-   *
-   * @return string|null
-   *   The pipeline_tag value, or NULL on failure.
-   */
-  protected function getHfPipelineTag(string $repo): ?string {
-    $cache = $this->state->get('ai_provider_llama_cpp.hf_tag_cache', []);
-    if (array_key_exists($repo, $cache)) {
-      return $cache[$repo];
-    }
 
-    try {
-      $response = $this->httpRequest('GET', "https://huggingface.co/api/models/{$repo}", [], 5);
-      $data = json_decode($response->getBody()->getContents(), TRUE);
-      $tag = $data['pipeline_tag'] ?? NULL;
-    }
-    catch (\Throwable) {
-      $tag = NULL;
-    }
-
-    $cache[$repo] = $tag;
-    $this->state->set('ai_provider_llama_cpp.hf_tag_cache', $cache);
-
-    return $tag;
-  }
-
-  /**
-   * Build the list of models (entity_id => raw) filtered for a given op type.
-   *
-   * If $server_id is NULL, includes models from all servers.
-   */
-  protected function buildModelListForOperation(?string $server_id, ?string $operation_type): array {
-    $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
-    $query = $storage->getQuery();
-
-    if ($server_id) {
-      $query->condition('server_id', $server_id);
-    }
-
-    $ids = $query->accessCheck(FALSE)->execute();
-    $models = $storage->loadMultiple($ids);
-
-    $result = [];
-    $this->models = [];
-
-    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model */
-    foreach ($models as $model) {
-      $key = $model->id();
-      $raw = $model->getRawModelId();
-      $this->models[$key] = $raw;
-
-      $effective = $model->getEffectiveOperationTypes();
-      if ($operation_type === NULL || in_array($operation_type, $effective, TRUE)) {
-        $result[$key] = $raw;
-      }
-    }
-
-    return $result;
-  }
-
-  /**
-   * Persist (create or update) model entities for a server after discovery.
-   *
-   * @param string $server_id
-   *   The owning server entity id.
-   * @param array<string, array{raw: string, detected: string[]}> $discovered
-   *   Discovered models keyed by model entity id.
-   */
-  protected function persistModelsForServer(string $server_id, array $discovered): void {
-    $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
-
-    // Load existing for this server to update / remove stale.
-    $existing = $storage->loadByProperties(['server_id' => $server_id]);
-
-    $seen_ids = [];
-
-    foreach ($discovered as $entity_id => $info) {
-      $seen_ids[$entity_id] = TRUE;
-
-      /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface|null $model */
-      $model = $storage->load($entity_id);
-
-      $raw = $info['raw'];
-      $detected = $info['detected'];
-
-      if (!$model) {
-        $model = $storage->create([
-          'id' => $entity_id,
-          'label' => $raw,
-          'server_id' => $server_id,
-          'raw_model_id' => $raw,
-        ]);
-      }
-
-      $model->setRawModelId($raw);
-      $model->setServerId($server_id);
-      $model->setDetectedOperationTypes($detected);
-
-      // Make label more informative: "ServerLabel / raw" when possible.
-      $server_label = '';
-      $srv = $this->entityTypeManager->getStorage('llama_cpp_server')->load($server_id);
-      if ($srv) {
-        $server_label = $srv->label();
-      }
-      $nice_label = $server_label ? ($server_label . ' / ' . $raw) : $raw;
-
-      // Only overwrite label if it was previously simple.
-      if (empty($model->label()) || $model->label() === $model->getRawModelId() || str_ends_with($model->label(), ' / ' . $raw)) {
-        $model->set('label', $nice_label);
-      }
-
-      $model->save();
-    }
-
-    // Remove models that disappeared from the server.
-    foreach ($existing as $old_id => $old_model) {
-      if (!isset($seen_ids[$old_id])) {
-        $old_model->delete();
-      }
-    }
-  }
-
-  /**
-   * Generate a stable, valid config entity id for a model on a server.
-   *
-   * The id is "server__machine". Both parts are already restricted to
-   * [a-z0-9_] by their machine-name handling, so the only remaining risks are
-   * an empty machine name and excessive length (config object names are capped
-   * at 250 chars). We guard both, disambiguating any truncation with a short
-   * deterministic hash so the same (server, raw model) always yields the same
-   * id.
-   */
-  protected function buildModelEntityId(string $server_id, string $machine_name): string {
-    // Sanitize both parts to guarantee only lower-case alphanumeric and underscores are kept.
-    $clean_server = preg_replace('@[^a-z0-9_]+@', '_', mb_strtolower($server_id));
-    $clean_server = trim(preg_replace('@_+@', '_', $clean_server), '_');
-
-    $clean_machine = preg_replace('@[^a-z0-9_]+@', '_', mb_strtolower($machine_name));
-    $clean_machine = trim(preg_replace('@_+@', '_', $clean_machine), '_');
-
-    if ($clean_machine === '') {
-      $clean_machine = 'model';
-    }
-    if ($clean_server === '') {
-      $clean_server = 'server';
-    }
-
-    $id = $clean_server . '__' . $clean_machine;
-
-    // Leave generous headroom under the 250-char config name limit (the
-    // "ai_provider_llama_cpp.model." prefix already consumes ~28 chars).
-    $max = 160;
-    if (strlen($id) > $max) {
-      $suffix = '_' . substr(hash('sha256', $id), 0, 8);
-      $id = substr($id, 0, $max - strlen($suffix)) . $suffix;
-    }
-    return $id;
-  }
 
   /**
    * Gets the raw model identifier from the stored mapping (or model entities).
@@ -933,13 +676,11 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   protected function getModel(string $model_id): string {
     if (empty($this->models)) {
-      // Populate from the current server context, or load the specific model.
       $server = $this->getServerEntity();
       if ($server) {
-        $this->models = $this->buildModelListForOperation($server->id(), NULL);
+        $this->models = $this->modelCatalog->getModelsForServer($server->id());
       }
       else {
-        // Try direct load of the model entity.
         $model = $this->entityTypeManager
           ->getStorage('llama_cpp_model')
           ->load($model_id);
@@ -951,25 +692,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     return $this->models[$model_id] ?? $model_id;
   }
 
-  /**
-   * Generates a machine name from a string.
-   *
-   * @param string $string
-   *   String to have translated.
-   *
-   * @return string
-   *   The machine name.
-   */
-  protected function getMachineName(string $string): string {
-    $transliterated = $this->transliteration->transliterate($string, LanguageInterface::LANGCODE_DEFAULT, '_');
-    $transliterated = mb_strtolower($transliterated);
-    $machine = (string) preg_replace('@[^a-z0-9_]+@', '_', $transliterated);
-    // Collapse runs of underscores and trim them so ids stay clean and stable
-    // for raw model names containing slashes, dots or repeated separators
-    // (e.g. "Qwen/Qwen2.5-7B-Instruct" => "qwen_qwen2_5_7b_instruct").
-    $machine = (string) preg_replace('@_+@', '_', $machine);
-    return trim($machine, '_');
-  }
+
 
   /**
    * Gets the base host URL for the server.
