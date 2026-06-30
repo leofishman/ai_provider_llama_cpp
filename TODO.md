@@ -59,6 +59,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Admin UX polish:
   - [ ] "Test connection" / status action from the server list (beyond form validation).
   - [ ] Show last discovered model count + capability summary in the server list.
+  - [ ] **(Post-2.0) Migrate model/operation filtering UI to Views.** Currently the
+        model capability overrides live in `LlamaCppServerForm::buildOverridesForm()`
+        (per-server checkboxes list of `llama_cpp_model` entities). Blocker: `llama_cpp_model`
+        is a **config entity** and Views core has no `views_data` for config entities, so this
+        is not a click-in-UI task. Options: (A) custom Views query plugin + views_data over
+        config entities (~2-4d, fragile); (B) convert `llama_cpp_model` to a content entity +
+        data-migration update hook, then standard View (~3-5d, cleaner but touches the
+        config/deployment model); (C) cheap win — keep the form, improve UX with tableselect /
+        pagination (~half-day). The `model_filter` pattern textfield is a string on the server
+        config, not a list — out of scope for Views.
 - [X] i18n audit (interface strings only):
   - [x] `t()` / `TranslatableMarkup` on all UI strings: provider label, entity labels,
         form labels/descriptions/errors, update hook messages, moderation messages.
