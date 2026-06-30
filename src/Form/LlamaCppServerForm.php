@@ -45,7 +45,7 @@ class LlamaCppServerForm extends EntityForm {
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container) {
+  final public static function create(ContainerInterface $container) {
     return new static(
       $container->get('ai.provider'),
       $container->get('key.repository'),

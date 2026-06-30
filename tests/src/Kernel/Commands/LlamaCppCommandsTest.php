@@ -10,6 +10,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\Tests\ai_provider_llama_cpp\Kernel\Traits\HttpClientMockTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
@@ -19,6 +20,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
  */
 #[CoversClass(LlamaCppCommands::class)]
 #[Group('ai_provider_llama_cpp')]
+#[IgnoreDeprecations]
 final class LlamaCppCommandsTest extends KernelTestBase {
 
   use HttpClientMockTrait;
