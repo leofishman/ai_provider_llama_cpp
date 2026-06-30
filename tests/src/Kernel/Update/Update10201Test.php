@@ -8,6 +8,7 @@ use Drupal\Component\Utility\DeprecationHelper;
 use Drupal\KernelTests\KernelTestBase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 
 /**
  * Tests update 10201 legacy config migration.
@@ -16,6 +17,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  */
 #[Group('ai_provider_llama_cpp')]
 #[RunTestsInSeparateProcesses]
+#[IgnoreDeprecations]
 final class Update10201Test extends KernelTestBase {
 
   /**

@@ -23,7 +23,7 @@ class LlamaCppServerDeleteForm extends EntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container) {
+  final public static function create(ContainerInterface $container) {
     return new static(
       $container->get('state'),
     );

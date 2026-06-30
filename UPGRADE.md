@@ -105,18 +105,21 @@ drush llama-cpp:discover-models
 If you currently reach a llama.cpp / OpenAI-compatible server through a different
 provider module:
 
-- **OpenAI-compatible providers** (e.g. the generic OpenAI provider pointed at a
-  llama.cpp `/v1` endpoint): create a `llama_cpp_server` entity for the same host
-  + port (+ Key for the API key if any), run `drush llama-cpp:discover-models`,
-  then switch the relevant operation types in **AI → Settings** to the
-  `llama_cpp` provider and the discovered model.
-- **The native `ai_provider_ollama` module:** Ollama exposes an OpenAI-compatible
-  endpoint as well; point a `llama_cpp_server` at it (or keep both providers
-  installed side by side) and re-select per operation type. The two providers are
-  independent and can coexist.
+- **OpenAI-compatible providers** (e.g., `ai_provider_openai` pointed at a
+  llama.cpp or vLLM `/v1` endpoint): Create a `llama_cpp_server` entity for the same host
+  and port (create a Key entity for the API key if it's required). Run
+  `drush llama-cpp:discover-models` to populate the model entities, and finally switch the
+  relevant operation types in **AI → Settings** to the `llama_cpp` provider, selecting your model.
+- **The native `ai_provider_ollama` module:** Ollama natively supports the OpenAI `/v1`
+  API. You can point a new `llama_cpp_server` at your Ollama instance (`http://127.0.0.1:11434`),
+  discover models, and re-select them. Alternatively, you can keep both `ai_provider_ollama`
+  and this module running side by side (e.g., use the Ollama provider for standard chat and
+  this provider for embedding or Moderation via ShieldGemma).
 
-There is no automated cross-module migration; the step above (create server →
-discover → re-select) is the supported path.
+There is no automated cross-module migration; you must manually:
+1. Create your `llama_cpp_server`
+2. Run model discovery
+3. Re-select your models in the AI settings page.
 
 ## Compatibility
 

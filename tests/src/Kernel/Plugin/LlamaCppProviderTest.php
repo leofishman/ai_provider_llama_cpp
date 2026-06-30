@@ -11,6 +11,7 @@ use Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 
 /**
  * Tests the single (non-derived) llama.cpp provider plugin and model entities.
@@ -22,6 +23,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 #[CoversClass(LlamaCppProvider::class)]
 #[Group('ai_provider_llama_cpp')]
 #[RunTestsInSeparateProcesses]
+#[IgnoreDeprecations]
 final class LlamaCppProviderTest extends KernelTestBase {
 
   use HttpClientMockTrait;

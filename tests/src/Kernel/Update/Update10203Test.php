@@ -7,6 +7,7 @@ namespace Drupal\Tests\ai_provider_llama_cpp\Kernel\Update;
 use Drupal\KernelTests\KernelTestBase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 
 /**
  * Tests update 10203 legacy derived plugin and state-model migration.
@@ -15,6 +16,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  */
 #[Group('ai_provider_llama_cpp')]
 #[RunTestsInSeparateProcesses]
+#[IgnoreDeprecations]
 final class Update10203Test extends KernelTestBase {
 
   /**

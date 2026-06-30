@@ -9,6 +9,7 @@ use Drupal\ai_provider_llama_cpp\Service\ModelCatalog;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 
 /**
  * Tests capability detection in ModelCatalog.
@@ -21,6 +22,7 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[CoversClass(ModelCatalog::class)]
 #[Group('ai_provider_llama_cpp')]
+#[IgnoreDeprecations]
 final class ModelCatalogTest extends KernelTestBase {
 
   /**
