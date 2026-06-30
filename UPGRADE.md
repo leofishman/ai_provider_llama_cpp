@@ -1,6 +1,27 @@
 # Upgrading to `ai_provider_llama_cpp` 2.0
 
-> There is no 1.3 release. Development goes directly from the 1.2.x series to 2.0.
+> **Supported source versions: 1.0.x, 1.1.x and 1.2.x.** There is no 1.3 release —
+> development goes from the 1.2.x series directly to 2.0. The update hooks cover
+> every 1.x layout (see [What the update hooks do](#what-the-update-hooks-do)):
+>
+> - **1.0.x / 1.1.x** — single server stored in `ai_provider_llama_cpp.settings`
+>   (host + port) plus a global State model catalog. `update_10201` migrates it
+>   to a server entity with id `default`.
+> - **1.2.x** — multi-server. Depending on your sub-version the servers may live
+>   as `llama_cpp_server` config entities **or** only as per-server State keys
+>   (`ai_provider_llama_cpp.server.<id>.*`). `update_10203` handles both, creating
+>   any missing server entities so their models migrate.
+
+> ⚠️ **This is an early release (`2.0.0-alpha*`).** It was tested as thoroughly as
+> we could against real upgrade data, but **not** across every possible 1.x
+> layout. Treat it accordingly:
+>
+> - **Take a full database + config backup before upgrading.** There is no
+>   in-place downgrade (see [Rollback](#rollback)).
+> - Run the upgrade on a copy/staging site first if you can.
+> - **Please report any problem** you hit (with the `drush updb` output and your
+>   source version) on the project's issue queue. Bug reports on this release are
+>   genuinely useful and welcome.
 
 2.0 is a structural release. The provider stops using **plugin derivers** (one
 derived plugin per server) and moves to a **single provider plugin** backed by
@@ -27,7 +48,7 @@ verify your AI operation-type assignments afterward.
 - Ensure the **Key** module is available (it is a hard dependency in 2.0):
   `composer require drupal/key` if it is not already installed.
 
-## In-place upgrade (1.2.x → 2.0)
+## In-place upgrade (1.0.x / 1.1.x / 1.2.x → 2.0)
 
 ```bash
 # 1. Pull the new code.
@@ -58,6 +79,16 @@ The updates run in order and are idempotent (safe to re-run):
   (`llama_cpp:<server>`) back to the single `llama_cpp` plugin and **remaps each
   `model_id`** from the old per-server machine name to the new entity id.
 
+  For 1.2.x multi-server setups whose extra servers existed only as State
+  (evidenced by keys such as `ai_provider_llama_cpp.server.ollama.*` with no
+  matching `llama_cpp_server` config entity), the update also auto-creates the
+  corresponding `llama_cpp_server` entities so their models migrate. **1.x never
+  stored per-server host/port for these**, so they are created with empty
+  host/port and a "(migrated from 1.x state)" label. You must edit each one to
+  enter the correct host and port, then re-run `drush llama-cpp:discover-models`.
+  (Your single `default` server keeps its host/port, which did survive in
+  config.)
+
 > **Read the `drush updb` output.** If a model reference could not be
 > auto-remapped, `update_10203` reports the affected operation types, e.g.:
 >
@@ -72,8 +103,10 @@ The updates run in order and are idempotent (safe to re-run):
 ## After upgrading
 
 1. Visit **Configuration → AI → Providers → llama.cpp servers** and confirm your
-   server(s) are present (the migrated one is labelled *"llama.cpp (migrated)"*,
-   id `default`).
+   server(s) are present. The main one will be labelled *"llama.cpp (migrated)"*
+   (id `default`). Additional servers from 1.x state data will have
+   "(migrated from 1.x state)" labels and empty host/port — **edit them to
+   fill the correct host and port**, then re-discover models.
 2. Re-discover models if needed (e.g. on a fresh environment with no State to
    migrate):
 

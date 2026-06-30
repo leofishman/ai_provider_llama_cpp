@@ -177,6 +177,38 @@ function ai_provider_llama_cpp_update_10203() {
   $model_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_model');
   $server_storage = \Drupal::entityTypeManager()->getStorage('llama_cpp_server');
 
+  // Support multi-server 1.x setups that used per-server state keys
+  // (e.g. ai_provider_llama_cpp.server.ollama.*, server.vllm.* etc.)
+  // but did not have full llama_cpp_server config entities yet.
+  // Create minimal server entities so models can be migrated and
+  // default_providers remapping can succeed for all of them.
+  // Host/port are left empty for additional servers; user must reconfigure
+  // them on the llama.cpp servers admin page and re-run discovery.
+  // Read via the State API rather than querying the key_value table directly,
+  // so this works regardless of the keyvalue backend (and in test environments
+  // where the table may not exist).
+  $server_ids_from_state = [];
+  foreach (array_keys(\Drupal::keyValue('state')->getAll()) as $name) {
+    if (preg_match('#^ai_provider_llama_cpp\.server\.([^.]+)\.#', $name, $matches)) {
+      $server_ids_from_state[$matches[1]] = TRUE;
+    }
+  }
+
+  foreach (array_keys($server_ids_from_state) as $sid) {
+    if (!$server_storage->load($sid)) {
+      $server_storage->create([
+        'id' => $sid,
+        'label' => ucfirst($sid) . ' (migrated from 1.x state)',
+        'host_name' => '',
+        'port' => '',
+        'api_key' => '',
+        'timeout' => 600,
+        'operation_types' => [],
+        'model_filter' => '',
+      ])->save();
+    }
+  }
+
   // 1. Migrate old State-based model data (pre-refactor derivers) into
   //    llama_cpp_model config entities FIRST, so the default_providers rewrite
   //    below can remap each model_id reference to the new entity id.
@@ -208,7 +240,9 @@ function ai_provider_llama_cpp_update_10203() {
   // 2. Rewrite ai.settings.default_providers: collapse derived provider ids
   //    (llama_cpp:server) to the single 'llama_cpp' plugin, and remap each
   //    model_id from the old per-server machine name to the new entity id
-  //    ("server__machine") whenever the migrated model entity exists.
+  //    ("server__machine") whenever the migrated model entity exists. Models
+  //    that cannot be matched are reported so the admin can re-select them,
+  //    rather than fabricating a possibly-wrong model reference.
   $ai_config = \Drupal::configFactory()->getEditable('ai.settings');
   $defaults = $ai_config->get('default_providers') ?? [];
   $changed = FALSE;
@@ -246,13 +280,22 @@ function ai_provider_llama_cpp_update_10203() {
   if (!$changed) {
     return t('No derived llama_cpp provider references found.');
   }
+
+  $extra = '';
+  if (count($server_ids_from_state) > 1) {
+    $extra = ' Additional servers (from 1.x state data) were created with empty host/port. Edit them on the llama.cpp servers page, enter the correct host+port and re-run discovery.';
+  }
+
   if ($unmapped) {
-    return t('Migrated llama.cpp providers. Remapped models for: @mapped. Could not auto-map models for: @unmapped — please re-select them in the AI settings.', [
+    return t('Migrated llama.cpp providers. Remapped models for: @mapped. Could not auto-map models for: @unmapped — please re-select them in the AI settings.@extra', [
       '@mapped' => implode(', ', $mapped) ?: '-',
       '@unmapped' => implode(', ', $unmapped),
+      '@extra' => $extra,
     ]);
   }
-  return t('Migrated llama.cpp providers and remapped models for: @mapped.', [
-    '@mapped' => implode(', ', $mapped),
+
+  return t('Migrated llama.cpp providers and remapped models for: @mapped.@extra', [
+    '@mapped' => implode(', ', $mapped) ?: '-',
+    '@extra' => $extra,
   ]);
 }

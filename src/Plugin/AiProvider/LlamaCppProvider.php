@@ -194,13 +194,41 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   public function isUsable(?string $operation_type = NULL, array $capabilities = []): bool {
-    if (!$this->getBaseHost()) {
-      return FALSE;
+    $server = $this->getServerEntity();
+
+    if ($server) {
+      // Specific server context
+      if (!$server->getHostName()) {
+        return FALSE;
+      }
+      if ($operation_type) {
+        return in_array($operation_type, $this->getSupportedOperationTypes());
+      }
+      return TRUE;
     }
-    if ($operation_type) {
-      return in_array($operation_type, $this->getSupportedOperationTypes());
+
+    // Generic case (no specific server/model selected, e.g. the requirements
+    // check or form options). The provider is "set up" if at least one server
+    // has a host. When a specific operation type is requested we additionally
+    // require a discovered model that supports it, so capability reporting stays
+    // honest — but the bare "is a provider configured?" check (no operation
+    // type) must not depend on discovery having run yet.
+    $server_storage = $this->entityTypeManager->getStorage('llama_cpp_server');
+    $servers = $server_storage->loadMultiple();
+
+    foreach ($servers as $srv) {
+      if (!$srv->getHostName()) {
+        continue;
+      }
+      if ($operation_type === NULL) {
+        return TRUE;
+      }
+      if (!empty($this->modelCatalog->getModelsForServer($srv->id(), $operation_type))) {
+        return TRUE;
+      }
     }
-    return TRUE;
+
+    return FALSE;
   }
 
   /**
