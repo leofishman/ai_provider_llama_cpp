@@ -6,7 +6,8 @@ it natively supports **any OpenAI-compatible `/v1` server** (including Ollama, v
 
 This module uses **config entities for servers (`llama_cpp_server`) and models (`llama_cpp_model`)** + a single stable plugin (`llama_cpp`). This makes it easy to evolve toward additional specific provider plugins over time.
 
-> **Important**: This work is happening on the `2.0` branch. See [DESIGN.md](DESIGN.md) for the full architectural design and [TODO.md](TODO.md) for the task list. There is no 1.3 release — development goes directly to 2.0.
+> **v2.0 released** (June 2026). There is no 1.3 — development moved directly from 1.2.x to 2.0.
+> See [UPGRADE.md](UPGRADE.md) for migration details, [DESIGN.md](DESIGN.md) for architecture, and [TODO.md](TODO.md) for the remaining roadmap.
 
 ## Quick start
 
@@ -20,7 +21,7 @@ Then add a backend at **Configuration → AI → llama.cpp Servers**
 `http://127.0.0.1:8080`), save the server to discover its models, and select those
 models per operation type under the `llama_cpp` provider in the AI module settings.
 
-Upgrading from 1.x? Run `drush updb` — see [Upgrading from 1.x](#upgrading-from-1x).
+Upgrading from 1.x? Run `drush updb` — see the [Upgrading from 1.x](#upgrading-from-1x) section below and [UPGRADE.md](UPGRADE.md).
 
 ## Features
 
@@ -39,36 +40,30 @@ Upgrading from 1.x? Run `drush updb` — see [Upgrading from 1.x](#upgrading-fro
 - **Robust Caching**: Model lists and detected capabilities are cached in Drupal State for resilience.
 - **Flexible Connection**: Configurable timeout per-server and optional API key support (for authenticated instances like vLLM).
 
-## Roadmap (2.0)
+## What's new in 2.0
 
-There is no 1.3 release: development goes **directly to 2.0**. See [DESIGN.md](DESIGN.md)
-for the full architecture and [TODO.md](TODO.md) for the concrete task list.
+2.0 is a major structural release. Development went directly from the 1.2.x series to 2.0 (no 1.3).
 
-### Done in the 2.0 refactor
+### Major changes
 
-- **Servers and models are config entities** (`llama_cpp_server`, `llama_cpp_model`):
-  discovered models + overrides are now exportable, versionable config (migrated from State).
-- **Single stable `llama_cpp` plugin, no derivers**: runtime resolves the backend server
-  from the selected model entity, so model keys stay unique across servers.
-- **Automatic migration** from 1.x via update hooks (`update_10201`–`update_10203`):
-  remaps `default_providers` from `llama_cpp:servername` → `llama_cpp` and auto-remaps
-  `model_id` to the new `servername__model` form so operations keep working without manual
-  re-selection.
-- Key module integration, per-server timeout/API key, and glob model filtering.
+- **Servers and models are now config entities** (`llama_cpp_server` + `llama_cpp_model`):
+  fully exportable with `drush config:export`, version controllable, and multi-instance native.
+- **Single stable plugin**: `llama_cpp` (no more per-server derivatives like `llama_cpp:default`).
+  The selected `llama_cpp_model` entity tells the provider which backend server to use.
+- **Full migration support**: `update_10201`–`update_10203` automatically migrate old State + derived plugin IDs.
+- Credentials moved to the **Key** module.
+- Per-server timeout, optional API key, and powerful glob-based model filtering.
+- Native support for rerank, moderation (Llama Guard 3 + ShieldGemma), and text-to-image in addition to chat/embeddings/STT.
 
-### Planned for 2.0
+See the full [UPGRADE.md](UPGRADE.md) for the migration path and what changed in IDs.
 
-- **Harden the data model**: keep `getConfiguredModels()` strictly read-only (no config
-  writes on a read path), discovery only on explicit action, robust ID sanitization.
-- **Internationalization**: audit all interface strings for `t()` / `TranslatableMarkup`
-  and ship a generated `.pot` template. (Spanish `.po` follows via localize.drupal.org once
-  strings stabilize — not a 2.0 blocker.)
-- **Expanded test coverage**: model discovery, filtering, moderation parsers, rerank, and
-  text-to-image; more multi-server and migration edge cases.
-- **Migration & upgrade docs**: clear in-place upgrade guide plus paths from other AI
-  provider modules.
+### Translations
 
-### Future (post-2.0)
+A complete Spanish translation (`es`) is included in `translations/ai_provider_llama_cpp.es.po`.
+
+### Future work (post 2.0)
+
+See [TODO.md](TODO.md) for the current backlog.
 
 - **Views integration** for discovered models and overrides.
 - **Per-model guardrails**: attach pre-moderation models, sanitization rules, output
@@ -103,19 +98,14 @@ For each server, you can configure:
 
 ## Upgrading from 1.x
 
-2.0 replaces the per-server plugin derivatives (`llama_cpp:servername`) with a single
-`llama_cpp` provider plus `llama_cpp_model` config entities, and moves model data out of
-State. The upgrade is automatic:
+The upgrade is automatic:
 
-1. `composer update drupal/ai_provider_llama_cpp` then `drush updb`.
-2. The update hooks migrate State to model entities and remap your AI settings:
-   `llama_cpp:servername` → `llama_cpp`, with each `model_id` rewritten to the new
-   `servername__model` form. Most sites keep working with no manual change.
-3. Only models the hooks could not auto-map are reported in the update message — re-save
-   the relevant server (to re-run discovery) and re-select the model in the AI settings.
+1. `composer require 'drupal/ai_provider_llama_cpp:^2.0' -W` then `drush updb`.
+2. Update hooks migrate old State data to `llama_cpp_model` entities and rewrite
+   `ai.settings.default_providers` (`llama_cpp:servername` → `llama_cpp` and model IDs to the new `server__model` format).
+3. If any models could not be auto-mapped, the update message tells you which operation types need manual re-selection.
 
-See [DESIGN.md §6](DESIGN.md) for the full migration design, including paths from other AI
-provider modules.
+See [UPGRADE.md](UPGRADE.md) for the complete step-by-step guide and paths from other providers.
 
 ## Compatible servers
 
@@ -143,6 +133,17 @@ The most important configuration options (after host and port) are:
 - **Model Overrides**: For fine-tuned or unusual models, you can explicitly assign operation types per model in the server edit form.
 
 These two options are what allow the module to work well across very different backends.
+
+## Verification
+
+- Unit and Kernel tests (including full migration scenarios) pass.
+- phpstan clean.
+- Core functionality (multi-server, discovery, moderation, overrides, upgrade path) verified.
+- For the 2.0 release the maintainer performed manual testing of the admin forms and end-to-end flows.
+
+## Spanish translation
+
+El módulo incluye una traducción completa al español (`es`) en `translations/ai_provider_llama_cpp.es.po`.
 
 ## Maintainers
 

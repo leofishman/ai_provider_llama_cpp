@@ -1,0 +1,307 @@
+# Spanish translation of AI Provider: llama.cpp (Multi-instance)
+# Copyright (c) 2026 Leonardo Fishman
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: AI Provider: llama.cpp 2.0\n"
+"POT-Creation-Date: 2026-06-30 19:40+0000\n"
+"PO-Revision-Date: 2026-06-30 20:00+0000\n"
+"Last-Translator: Leonardo Fishman <leo@fishman.work>\n"
+"Language-Team: Spanish <https://localize.drupal.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:58
+msgid "No existing server configuration found. Skipping migration."
+msgstr "No se encontró configuración de servidor existente. Se omite la migración."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:66
+msgid "Server \"default\" already exists. Skipping migration."
+msgstr "El servidor \"default\" ya existe. Se omite la migración."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:110
+msgid "Migrated server configuration to entity \"default\" (llama_cpp:default)."
+msgstr "Configuración del servidor migrada a la entidad \"default\" (llama_cpp:default)."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:162
+msgid "Migrated @count server API key(s) to Key entities."
+msgstr "Se migraron @count clave(s) de API de servidor a entidades Key."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:247
+msgid "No derived llama_cpp provider references found."
+msgstr "No se encontraron referencias de proveedores derivados de llama_cpp."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:250
+msgid "Migrated llama.cpp providers. Remapped models for: @mapped. Could not auto-map models for: @unmapped — please re-select them in the AI settings."
+msgstr "Proveedores de llama.cpp migrados. Modelos reasignados para: @mapped. No se pudieron asignar automáticamente los modelos para: @unmapped — por favor, vuelva a seleccionarlos en la configuración de AI."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.install:255
+msgid "Migrated llama.cpp providers and remapped models for: @mapped."
+msgstr "Proveedores de llama.cpp migrados y modelos reasignados para: @mapped."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.info.yml:0
+msgid "llama.cpp"
+msgstr "llama.cpp"
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.info.yml:0
+msgid "Multi-instance AI provider for llama.cpp and OpenAI-compatible servers. Supports chat, embeddings, speech-to-text, rerank, moderation, and text-to-image."
+msgstr "Proveedor de IA multi-instancia para llama.cpp y servidores compatibles con OpenAI. Soporta chat, embeddings, conversión de voz a texto, rerank, moderación y generación de imágenes."
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.info.yml:0
+msgid "AI Providers"
+msgstr "Proveedores de IA"
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.links.action.yml:0
+msgid "Add server"
+msgstr "Agregar servidor"
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.links.menu.yml:0
+msgid "llama.cpp Servers"
+msgstr "Servidores llama.cpp"
+
+#: modules/contrib/ai_provider_llama_cpp/ai_provider_llama_cpp.links.menu.yml:0
+msgid "Manage OpenAI-compatible server instances."
+msgstr "Administre instancias de servidores compatibles con OpenAI."
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Legacy llama.cpp settings"
+msgstr "Configuración legacy de llama.cpp"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0;0 modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:91
+msgid "Host Name"
+msgstr "Nombre del host"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0;0 modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:100
+msgid "Port"
+msgstr "Puerto"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0 modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppServer.php:18
+msgid "OpenAI-compatible Server"
+msgstr "Servidor compatible con OpenAI"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0;0
+msgid "ID"
+msgstr "ID"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0;0
+msgid "Label"
+msgstr "Etiqueta"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "API Key (Key entity ID)"
+msgstr "Clave de API (ID de entidad Key)"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Timeout"
+msgstr "Tiempo de espera (timeout)"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0 modules/contrib/ai_provider_llama_cpp/src/LlamaCppServerListBuilder.php:19
+msgid "Operation Types"
+msgstr "Tipos de operación"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0;0;0
+msgid "Operation Type"
+msgstr "Tipo de operación"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Model Filter"
+msgstr "Filtro de modelos"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0 modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppModel.php:17
+msgid "llama.cpp Model"
+msgstr "Modelo de llama.cpp"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Server ID"
+msgstr "ID del servidor"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Raw Model ID"
+msgstr "ID de modelo sin procesar"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Detected Operation Types"
+msgstr "Tipos de operación detectados"
+
+#: modules/contrib/ai_provider_llama_cpp/config/schema/ai_provider_llama_cpp.schema.yml:0
+msgid "Operation Types (overrides)"
+msgstr "Tipos de operación (sobrescrituras)"
+
+#: modules/contrib/ai_provider_llama_cpp/src/LlamaCppServerListBuilder.php:17
+msgid "Server"
+msgstr "Servidor"
+
+#: modules/contrib/ai_provider_llama_cpp/src/LlamaCppServerListBuilder.php:18
+msgid "Host"
+msgstr "Host"
+
+#: modules/contrib/ai_provider_llama_cpp/src/LlamaCppServerListBuilder.php:35
+msgid "Auto-detect"
+msgstr "Detección automática"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:49
+msgid "Server \"@id\" not found."
+msgstr "Servidor \"@id\" no encontrado."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:59
+msgid "No configured llama.cpp servers found."
+msgstr "No se encontraron servidores llama.cpp configurados."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:66
+msgid "Running model discovery for server: <info>@label</info> (@id)..."
+msgstr "Ejecutando descubrimiento de modelos para el servidor: <info>@label</info> (@id)..."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:79
+msgid "Success:"
+msgstr "Éxito:"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:80
+msgid "Discovered and persisted @count model(s) for server \"@id\"."
+msgstr "Se descubrieron y persistieron @count modelo(s) para el servidor \"@id\"."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Commands/LlamaCppCommands.php:91
+msgid "Failed to discover models for server \"@id\": @message"
+msgstr "Falló el descubrimiento de modelos para el servidor \"@id\": @message"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppModel.php:18
+msgid "Models"
+msgstr "Modelos"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppModel.php:19
+msgid "model"
+msgstr "modelo"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppModel.php:20
+msgid "models"
+msgstr "modelos"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppServer.php:19
+msgid "Servers"
+msgstr "Servidores"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppServer.php:20
+msgid "server"
+msgstr "servidor"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Entity/LlamaCppServer.php:21
+msgid "servers"
+msgstr "servidores"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerDeleteForm.php:36
+msgid "Are you sure you want to delete server %label?"
+msgstr "¿Está seguro de que desea eliminar el servidor %label?"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerDeleteForm.php:45
+msgid "This will remove the server configuration and all cached model data. Models served by this server will no longer be available as an AI provider. This action cannot be undone."
+msgstr "Esto eliminará la configuración del servidor y todos los datos de modelos en caché. Los modelos servidos por este servidor ya no estarán disponibles como proveedor de IA. Esta acción no se puede deshacer."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerDeleteForm.php:69
+msgid "Server %label has been deleted."
+msgstr "El servidor %label ha sido eliminado."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:67
+msgid "Server name"
+msgstr "Nombre del servidor"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:68
+msgid "A human-readable name for this server (e.g. \"Ollama Local\", \"GPU Chat Server\")."
+msgstr "Un nombre legible para este servidor (p. ej. \"Ollama Local\", \"Servidor GPU Chat\")."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:85
+msgid "Connection"
+msgstr "Conexión"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:92
+msgid "The host name including protocol. For DDEV use http://host.docker.internal."
+msgstr "El nombre del host incluyendo el protocolo. Para DDEV use http://host.docker.internal."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:101
+msgid "Port number. Leave empty for default. llama.cpp default is 8080, Ollama is 11434."
+msgstr "Número de puerto. Déjelo vacío para el valor predeterminado. El predeterminado de llama.cpp es 8080, el de Ollama es 11434."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:108
+msgid "API Key"
+msgstr "Clave de API"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:109
+msgid "Optional. Select a Key for authenticated servers (e.g. vLLM, LiteLLM). Leave empty for local llama.cpp servers without authentication."
+msgstr "Opcional. Seleccione una entidad Key para servidores autenticados (p. ej. vLLM, LiteLLM). Déjelo vacío para servidores locales de llama.cpp sin autenticación."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:115
+msgid "Timeout (seconds)"
+msgstr "Tiempo de espera (segundos)"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:116
+msgid "Request timeout in seconds. Increase for slow models or large inputs."
+msgstr "Tiempo de espera de la solicitud en segundos. Aumente para modelos lentos o entradas grandes."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:124
+msgid "Model Filtering"
+msgstr "Filtrado de modelos"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:130
+msgid "Model filter pattern"
+msgstr "Patrón de filtro de modelos"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:131
+msgid "Comma-separated list of allowed models (wildcards * supported). Examples: <code>llama3*, *mistral*, !*old*</code>. Leave empty to allow all models."
+msgstr "Lista separada por comas de modelos permitidos (se admiten comodines *). Ejemplos: <code>llama3*, *mistral*, !*old*</code>. Déjelo vacío para permitir todos los modelos."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:139
+msgid "Operation types"
+msgstr "Tipos de operación"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:140
+msgid "Select which operation types this server supports. Leave all unchecked for auto-detection."
+msgstr "Seleccione qué tipos de operación admite este servidor. Deje todas las casillas sin marcar para detección automática."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:164
+msgid "Model capability overrides"
+msgstr "Sobrescrituras de capacidades del modelo"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:165
+msgid "Capabilities are auto-detected from server metadata and HuggingFace. Use these overrides for models whose type cannot be auto-detected. Leave all checkboxes unchecked to use auto-detection."
+msgstr "Las capacidades se detectan automáticamente desde los metadatos del servidor y HuggingFace. Use estas sobrescrituras para modelos cuyo tipo no se puede detectar automáticamente. Deje todas las casillas sin marcar para usar la detección automática."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:176
+msgid "<p>No models found yet. Save the server first, then models will be discovered automatically.</p>"
+msgstr "<p>Aún no se encontraron modelos. Guarde el servidor primero, luego los modelos se descubrirán automáticamente.</p>"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:196
+msgid "Auto-detected: <em>@types</em>"
+msgstr "Detectado automáticamente: <em>@types</em>"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:234
+msgid "Could not connect to the server. Check the host, port, and API key."
+msgstr "No se pudo conectar al servidor. Verifique el host, el puerto y la clave de API."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:270
+msgid "Server %label has been @action."
+msgstr "El servidor %label ha sido @action."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:272
+msgid "created"
+msgstr "creado"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Form/LlamaCppServerForm.php:272
+msgid "updated"
+msgstr "actualizado"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Models/Moderation/LlamaGuard3.php:65
+msgid "Moderation triggered for: @reasons. See https://huggingface.co/meta-llama/Llama-Guard-3-8B for details."
+msgstr "Moderación activada por: @reasons. Consulte https://huggingface.co/meta-llama/Llama-Guard-3-8B para más detalles."
+
+#: modules/contrib/ai_provider_llama_cpp/src/Plugin/AiProvider/LlamaCppProvider.php:52
+msgid "llama.cpp (OpenAI-compatible)"
+msgstr "llama.cpp (compatible con OpenAI)"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Plugin/AiProvider/LlamaCppProvider.php:644
+msgid "Could not determine embedding vector size for model @model: @message"
+msgstr "No se pudo determinar el tamaño del vector de embeddings para el modelo @model: @message"
+
+#: modules/contrib/ai_provider_llama_cpp/src/Plugin/AiProvider/LlamaCppProvider.php:382
+msgid "Failed to get models from server: @message"
+msgstr "Falló la obtención de modelos desde el servidor: @message"

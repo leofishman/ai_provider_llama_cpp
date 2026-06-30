@@ -262,7 +262,7 @@ class LlamaCppServerForm extends EntityForm {
       // if the server is temporarily unreachable after save.
     }
 
-    // Save model overrides to State if present.
+    // Persist manual operation type overrides on the model config entities.
     if (!$server->isNew()) {
       $this->saveModelOverrides($form_state, $server->id());
     }

@@ -28,12 +28,8 @@ use Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\LlamaGuard3;
 use Drupal\ai_provider_llama_cpp\Models\Moderation\ShieldGemma;
 use Drupal\ai_provider_llama_cpp\Service\ModelCatalog;
-use Drupal\ai_provider_llama_cpp\Utility\ModelFilter;
-use Drupal\Component\Transliteration\TransliterationInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Http\ClientFactory;
-use Drupal\Core\Language\LanguageInterface;
-use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Psr\Http\Message\ResponseInterface;
@@ -74,20 +70,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   ];
 
   /**
-   * The state service.
-   *
-   * @var \Drupal\Core\State\StateInterface
-   */
-  protected StateInterface $state;
-
-  /**
-   * The transliteration service.
-   *
-   * @var \Drupal\Component\Transliteration\TransliterationInterface
-   */
-  protected TransliterationInterface $transliteration;
-
-  /**
    * The entity type manager.
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
@@ -126,8 +108,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->configuration = $configuration;
-    $instance->state = $container->get('state');
-    $instance->transliteration = $container->get('transliteration');
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->httpClientFactory = $container->get('http_client_factory');
     $instance->modelCatalog = $container->get(ModelCatalog::class);
@@ -193,7 +173,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
       $this->activeServerId = $model->getServerId();
     }
     elseif (str_contains($model_key, '__')) {
-      // Fallback for legacy compound keys "server__machine" during transition.
+      // Compatibility fallback for old-style compound keys ("server__machine").
+      // Post-2.0 all model keys are llama_cpp_model entity IDs.
       [$maybe_server] = explode('__', $model_key, 2);
       if ($this->entityTypeManager->getStorage('llama_cpp_server')->load($maybe_server)) {
         $this->activeServerId = $maybe_server;
@@ -697,11 +678,11 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   /**
    * Gets the base host URL for the server.
    *
-   * Reads from the config entity when available (derived instance),
-   * or from runtime configuration (form validation / temporary instances).
-   *
-   * @return string
-   *   The base host URL.
+   * Priority:
+   * 1. Config entity (normal 2.0 multi-server path).
+   * 2. Explicit $configuration passed at instantiation.
+   * 3. Legacy simple config (ai_provider_llama_cpp.settings) — shim for
+   *    validation paths and direct plugin use; empty on fresh 2.0 sites.
    */
   protected function getBaseHost(): string {
     $server = $this->getServerEntity();
