@@ -6,8 +6,7 @@ use Drupal\Core\Entity\EntityForm;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Http\ClientFactory;
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai_provider_llama_cpp\Plugin\AiProvider\LlamaCppProvider;
+use Drupal\ai_provider_llama_cpp\Service\ModelCatalog;
 use Drupal\key\KeyRepositoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -32,7 +31,7 @@ class LlamaCppServerForm extends EntityForm {
    * Constructs the form.
    */
   public function __construct(
-    protected AiProviderPluginManager $aiProviderManager,
+    protected ModelCatalog $modelCatalog,
     protected KeyRepositoryInterface $keyRepository,
     protected ClientFactory $httpClientFactory,
     EntityTypeManagerInterface $entity_type_manager,
@@ -47,7 +46,7 @@ class LlamaCppServerForm extends EntityForm {
    */
   final public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('ai.provider'),
+      $container->get(ModelCatalog::class),
       $container->get('key.repository'),
       $container->get('http_client_factory'),
       $container->get('entity_type.manager'),
@@ -257,23 +256,19 @@ class LlamaCppServerForm extends EntityForm {
     // them. getConfiguredModels() is read-only; persisting model entities is an
     // explicit action triggered here on save.
     //
-    // Reset the server storage static cache first: the form loaded this server
-    // earlier in the request (before the new model_filter was applied), and the
-    // provider's discovery reloads it from that cache. Without this reset the
-    // discovery would run against the stale, unfiltered entity and never prune
-    // models that the new filter excludes.
-    $this->entityTypeManager->getStorage('llama_cpp_server')->resetCache([$server->id()]);
+    // Call the ModelCatalog service directly with the just-saved $server entity
+    // (which already carries the new filter). This avoids going through the AI
+    // subsystem's ProviderProxy (untyped magic __call forwarding) and also
+    // sidesteps any stale static-cache reload, since we pass the live entity
+    // instead of reloading by ID.
     try {
-      $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
-      if ($provider instanceof LlamaCppProvider) {
-        $models = $provider->discoverModels();
-        $this->messenger()->addStatus($this->formatPlural(
-          count($models),
-          'Discovered 1 model on server %label.',
-          'Discovered @count models on server %label.',
-          ['%label' => $server->label()],
-        ));
-      }
+      $models = $this->modelCatalog->discoverModels($server);
+      $this->messenger()->addStatus($this->formatPlural(
+        count($models),
+        'Discovered 1 model on server %label.',
+        'Discovered @count models on server %label.',
+        ['%label' => $server->label()],
+      ));
     }
     catch (\Throwable $e) {
       // Connectivity is validated in validateForm(); discovery may still fail
