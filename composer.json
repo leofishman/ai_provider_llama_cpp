@@ -6,5 +6,12 @@
     "php": "^8.3",
     "drupal/ai": "^1.2.0",
     "drupal/key": "^1.18"
+  },
+  "extra": {
+    "patches": {
+      "drupal/ai": {
+        "Fix AiSettingsForm model validity check for optgrouped (server-grouped) model options": "patches/ai-support-optgrouped-model-options.patch"
+      }
+    }
   }
 }

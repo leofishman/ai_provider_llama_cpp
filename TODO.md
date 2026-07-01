@@ -137,7 +137,7 @@ Routing signals, split by where they live:
         no provider (incl. ai_provider_quant_cloud) has cost metadata — open differentiator.
   - [ ] `context_length` — **already supported by core** via the static model registry
         (`ai/resources/common_models/chat.yml`) + `AiProviderClientBase::getModelInfo()`.
-        Persist/consume it for routing; do not reinvent. Autopopulate from discovery.
+        Persist/consume it for routing; do not reinvent. Auto-populate on discovery.
   - [ ] `priority` / weight (int) — manual per-model preference ("prefer this for chat").
         No mechanism exists in core.
   - [ ] (optional) `quality`/tier label — no `AiModelInfo` class exists in core.

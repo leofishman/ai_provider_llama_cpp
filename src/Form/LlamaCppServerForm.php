@@ -133,14 +133,11 @@ class LlamaCppServerForm extends EntityForm {
       '#parents' => ['model_filter'],
     ];
 
-    $form['operation_types'] = [
-      '#type' => 'checkboxes',
-      '#title' => $this->t('Operation types'),
-      '#description' => $this->t('Select which operation types this server supports. Leave all unchecked for auto-detection.'),
-      '#options' => array_map([$this, 't'], self::OPERATION_TYPE_LABELS),
-      '#default_value' => $server->getOperationTypes(),
-    ];
-
+    // Operation types are controlled per-model (see "Model capability
+    // overrides" below), not at the server level. The server entity keeps an
+    // `operation_types` field in schema for potential future use, but it is not
+    // exposed here to avoid two overlapping override mechanisms.
+    //
     // Model capability overrides (edit only, when models are known).
     if (!$server->isNew()) {
       $form['overrides'] = $this->buildOverridesForm($server);
@@ -165,6 +162,11 @@ class LlamaCppServerForm extends EntityForm {
         'Capabilities are auto-detected from server metadata and HuggingFace. Use these overrides for models whose type cannot be auto-detected. Leave all checkboxes unchecked to use auto-detection.'
       ),
       '#open' => FALSE,
+      // #tree must be TRUE so each model's checkbox values nest under the
+      // 'overrides' parent, matching how saveModelOverrides() reads them
+      // (getValue(['overrides', $model_id])). Without it FAPI defaults to
+      // FALSE, the values land at the top level, and overrides never persist.
+      '#tree' => TRUE,
     ];
 
     $model_storage = $this->entityTypeManager->getStorage('llama_cpp_model');
@@ -240,10 +242,6 @@ class LlamaCppServerForm extends EntityForm {
   public function save(array $form, FormStateInterface $form_state) {
     /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server */
     $server = $this->entity;
-
-    // Clean operation_types: keep only checked values.
-    $raw_types = $form_state->getValue('operation_types', []);
-    $server->set('operation_types', array_values(array_filter($raw_types)));
 
     // Persist the model filter explicitly. Config entity forms do not
     // auto-map arbitrary form values onto the entity, so without this the

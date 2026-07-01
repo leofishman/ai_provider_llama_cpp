@@ -85,6 +85,19 @@ See [TODO.md](TODO.md) for the current backlog.
   see the docs for [Ollama](https://ollama.com), [vLLM](https://docs.vllm.ai),
   [llama.cpp](https://github.com/ggml-org/llama.cpp) or [LiteLLM](https://docs.litellm.ai).
 
+### Required patch for `drupal/ai`
+
+This module returns models grouped by server (optgroups) in the AI settings form, so the
+selected model persists correctly when switching providers. `drupal/ai` core doesn't handle
+optgrouped model options in its selection-validity check, so this module ships a small patch:
+[`patches/ai-support-optgrouped-model-options.patch`](patches/ai-support-optgrouped-model-options.patch).
+
+If your site uses [`cweagans/composer-patches`](https://github.com/cweagans/composer-patches),
+the patch is applied automatically — this module declares it under `extra.patches` in its own
+`composer.json`. Otherwise, apply it manually to `drupal/ai` after installing this module.
+
+The fix has also been proposed upstream to `drupal/ai`; once merged, this patch will be dropped.
+
 ## Configuration
 
 Navigate to **Administration → Configuration → AI → llama.cpp Servers**
