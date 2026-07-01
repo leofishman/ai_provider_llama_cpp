@@ -14,7 +14,7 @@ use Drupal\key\KeyRepositoryInterface;
 use Psr\Http\Message\ResponseInterface;
 
 /**
- * Handles model discovery, persistence and catalog queries for llama.cpp servers.
+ * Handles model discovery, persistence and catalog queries for llama.cpp.
  *
  * This service centralizes logic that was previously inside LlamaCppProvider,
  * making the provider smaller and the catalog logic reusable and testable.
@@ -44,7 +44,7 @@ class ModelCatalog {
   ) {}
 
   /**
-   * Discovers models from a server and persists them as llama_cpp_model entities.
+   * Discovers models from a server and persists them as llama_cpp_model items.
    *
    * @param \Drupal\ai_provider_llama_cpp\Entity\LlamaCppServerInterface $server
    *   The server whose catalog is being (re-)discovered.
@@ -328,7 +328,7 @@ class ModelCatalog {
         $factory = $factory->withApiKey($keyValue);
       }
     }
-    // If no key or no repository, proceed without (some servers don't require it).
+    // If no key or no repository, proceed without (some servers don't need it).
     return $factory->withHttpClient(
       $this->httpClientFactory->fromOptions(['timeout' => $server->getTimeout() ?: 600])
     )->withBaseUri($host . '/v1')->make();

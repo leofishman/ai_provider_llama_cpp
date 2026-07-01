@@ -156,7 +156,7 @@ final class LlamaCppProviderTest extends KernelTestBase {
     $degenerate = $catalog->buildModelEntityId('gpu', $catalog->getMachineName('///'));
     $this->assertSame('gpu__model', $degenerate);
 
-    // Direct passing of unsanitized strings (e.g. uppercase, spaces, special characters).
+    // Direct passing of unsanitized strings (uppercase, spaces, specials).
     $unsanitized = $catalog->buildModelEntityId('GPU-Server!', 'My Awesome Model / v2');
     $this->assertSame('gpu_server__my_awesome_model_v2', $unsanitized);
 
@@ -226,7 +226,7 @@ final class LlamaCppProviderTest extends KernelTestBase {
     $provider = $this->container->get('ai.provider')
       ->createInstance('llama_cpp', ['server_id' => 'discover_test']);
 
-    // Run discovery — this exercises loadClient() + OpenAI SDK models()->list().
+    // Run discovery — exercises loadClient() + OpenAI SDK models()->list().
     $discovered = $provider->discoverModels();
 
     // Only llama3-8b-instruct should survive the filter 'llama3*, !*old*'.

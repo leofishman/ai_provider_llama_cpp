@@ -42,7 +42,7 @@ trait HttpClientMockTrait {
   }
 
   /**
-   * Convenience helper to create a single JSON response for /v1/models style endpoints.
+   * Convenience helper to create a single JSON response for /v1/models.
    *
    * @param array $data
    *   The value for the 'data' key in the OpenAI-style list response.

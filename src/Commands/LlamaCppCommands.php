@@ -30,7 +30,8 @@ class LlamaCppCommands extends DrushCommands {
    * Discovers and persists models for one or all llama.cpp servers.
    *
    * @param string|null $server_id
-   *   Optional ID of the server to run discovery for. If omitted, runs for all servers.
+   *   Optional ID of the server to run discovery for. If omitted, runs for
+   *   all servers.
    *
    * @command llama-cpp:discover-models
    * @aliases lcdm, llama-cpp-discover
@@ -62,7 +63,7 @@ class LlamaCppCommands extends DrushCommands {
     }
 
     foreach ($servers as $server) {
-      // Build the message with placeholders so translators don't see raw markup.
+      // Build the message with placeholders so translators don't see markup.
       $message = $this->t('Running model discovery for server: <info>@label</info> (@id)...', [
         '@label' => $server->label(),
         '@id' => $server->id(),
@@ -73,7 +74,7 @@ class LlamaCppCommands extends DrushCommands {
         $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
 
         // discoverModels() is public; the AI module's ProviderProxy forwards
-        // public method calls, so we can call it directly on the returned object.
+        // public method calls, so we can call it directly on the object.
         $models = $provider->discoverModels();
 
         $success = $this->t('Success:');

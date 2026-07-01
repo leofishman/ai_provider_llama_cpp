@@ -210,7 +210,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     // Generic case (no specific server/model selected, e.g. the requirements
     // check or form options). The provider is "set up" if at least one server
     // has a host. When a specific operation type is requested we additionally
-    // require a discovered model that supports it, so capability reporting stays
+    // require a discovered model that supports it, so capability reporting
+    // stays
     // honest — but the bare "is a provider configured?" check (no operation
     // type) must not depend on discovery having run yet.
     $server_storage = $this->entityTypeManager->getStorage('llama_cpp_server');
@@ -243,7 +244,8 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    * {@inheritdoc}
    */
   protected function createClient(): Client {
-    // If the server doesn't use authentication, we must still supply a dummy API
+    // If the server doesn't use authentication, we must still supply a dummy
+    // API
     // key to the OpenAI client factory because its transporter requires one.
     if (!$this->hasAuthentication()) {
       $clientFactory = \OpenAI::factory();
