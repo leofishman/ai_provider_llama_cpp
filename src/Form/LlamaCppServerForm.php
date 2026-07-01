@@ -246,11 +246,23 @@ class LlamaCppServerForm extends EntityForm {
     $raw_types = $form_state->getValue('operation_types', []);
     $server->set('operation_types', array_values(array_filter($raw_types)));
 
+    // Persist the model filter explicitly. Config entity forms do not
+    // auto-map arbitrary form values onto the entity, so without this the
+    // filter would never be saved and discovery below would run unfiltered.
+    $server->set('model_filter', (string) $form_state->getValue('model_filter', ''));
+
     $status = $server->save();
 
     // Discover models (write path) so the edit form and AI settings can use
     // them. getConfiguredModels() is read-only; persisting model entities is an
     // explicit action triggered here on save.
+    //
+    // Reset the server storage static cache first: the form loaded this server
+    // earlier in the request (before the new model_filter was applied), and the
+    // provider's discovery reloads it from that cache. Without this reset the
+    // discovery would run against the stale, unfiltered entity and never prune
+    // models that the new filter excludes.
+    $this->entityTypeManager->getStorage('llama_cpp_server')->resetCache([$server->id()]);
     try {
       $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
       if ($provider instanceof LlamaCppProvider) {

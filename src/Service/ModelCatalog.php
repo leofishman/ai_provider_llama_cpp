@@ -118,6 +118,42 @@ class ModelCatalog {
   }
 
   /**
+   * Returns models grouped by server, for optgroup-style select options.
+   *
+   * The outer keys are server labels (used as <optgroup> labels), the inner
+   * arrays map model entity id => raw model id. This keeps the AI settings
+   * model dropdown unambiguous when several servers expose the same raw model
+   * id, without prefixing every option with a long server name.
+   *
+   * @param string|null $operationType
+   *   Optional operation type to filter models by.
+   *
+   * @return array<string, array<string, string>>
+   *   Map of server label => [model entity id => raw model id].
+   */
+  public function getModelsGroupedByServer(?string $operationType = NULL): array {
+    $storage = $this->entityTypeManager->getStorage('llama_cpp_model');
+    $serverStorage = $this->entityTypeManager->getStorage('llama_cpp_server');
+    $ids = $storage->getQuery()->accessCheck(FALSE)->execute();
+
+    $grouped = [];
+
+    /** @var \Drupal\ai_provider_llama_cpp\Entity\LlamaCppModelInterface $model */
+    foreach ($storage->loadMultiple($ids) as $model) {
+      $effective = $model->getEffectiveOperationTypes();
+      if ($operationType !== NULL && !in_array($operationType, $effective, TRUE)) {
+        continue;
+      }
+      $serverId = $model->getServerId();
+      $server = $serverStorage->load($serverId);
+      $groupLabel = $server ? $server->label() : $serverId;
+      $grouped[$groupLabel][$model->id()] = $model->getRawModelId();
+    }
+
+    return $grouped;
+  }
+
+  /**
    * Persists discovered models and cleans up removed ones.
    */
   protected function persistModelsForServer(string $serverId, array $discovered): void {

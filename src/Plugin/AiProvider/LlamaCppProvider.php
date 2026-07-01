@@ -2,6 +2,7 @@
 
 namespace Drupal\ai_provider_llama_cpp\Plugin\AiProvider;
 
+use OpenAI\Client;
 use Drupal\ai\Attribute\AiProvider;
 use Drupal\ai\Base\OpenAiBasedProviderClientBase;
 use Drupal\ai\Exception\AiRequestErrorException;
@@ -114,7 +115,6 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     return $instance;
   }
 
-
   /**
    * Gets the server config entity.
    *
@@ -197,7 +197,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $server = $this->getServerEntity();
 
     if ($server) {
-      // Specific server context
+      // Specific server context.
       if (!$server->getHostName()) {
         return FALSE;
       }
@@ -242,7 +242,7 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
   /**
    * {@inheritdoc}
    */
-  protected function createClient(): \OpenAI\Client {
+  protected function createClient(): Client {
     // If the server doesn't use authentication, we must still supply a dummy API
     // key to the OpenAI client factory because its transporter requires one.
     if (!$this->hasAuthentication()) {
@@ -362,9 +362,18 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
    */
   public function getConfiguredModels(?string $operation_type = NULL, array $capabilities = []): array {
     $server = $this->getServerEntity();
-    $serverId = $server ? $server->id() : NULL;
 
-    return $this->modelCatalog->getModelsForServer($serverId, $operation_type);
+    // Specific server context (a concrete server_id was injected): a flat list
+    // is unambiguous.
+    if ($server) {
+      return $this->modelCatalog->getModelsForServer($server->id(), $operation_type);
+    }
+
+    // Generic context (e.g. the AI settings default-providers form aggregates
+    // every server). Group by server so the model select renders <optgroup>s
+    // per server, keeping options short and unambiguous even when two servers
+    // expose a model with the same raw id.
+    return $this->modelCatalog->getModelsGroupedByServer($operation_type);
   }
 
   /**
@@ -670,38 +679,23 @@ class LlamaCppProvider extends OpenAiBasedProviderClientBase implements ReRankIn
     $this->client->models()->list();
   }
 
-
-
-
-
-
-
-
-
   /**
    * Gets the raw model identifier from the stored mapping (or model entities).
    *
    * The $model_id here is the key used by the AI system (llama_cpp_model id).
    */
   protected function getModel(string $model_id): string {
-    if (empty($this->models)) {
-      $server = $this->getServerEntity();
-      if ($server) {
-        $this->models = $this->modelCatalog->getModelsForServer($server->id());
-      }
-      else {
-        $model = $this->entityTypeManager
-          ->getStorage('llama_cpp_model')
-          ->load($model_id);
-        if ($model instanceof LlamaCppModelInterface) {
-          return $model->getRawModelId();
-        }
-      }
+    // Resolve the raw model id straight from the model entity. This is the
+    // authoritative source and keeps API resolution independent of the display
+    // labels returned by getConfiguredModels() (which include the server name).
+    $model = $this->entityTypeManager
+      ->getStorage('llama_cpp_model')
+      ->load($model_id);
+    if ($model instanceof LlamaCppModelInterface) {
+      return $model->getRawModelId();
     }
-    return $this->models[$model_id] ?? $model_id;
+    return $model_id;
   }
-
-
 
   /**
    * Gets the base host URL for the server.
