@@ -99,10 +99,61 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [ ] Add a second `#[AiProvider]` plugin to validate the abstraction (no derivers).
 
+## Phase 4.5 — Extensibility surface (events / alter / plugins)
+
+Open the module up for third parties **only where a real consumer needs it** (YAGNI
+until then). Candidates, in order of Drupal-idiomatic fit:
+
+- [ ] **Post-discovery event** (`LlamaCppModelsDiscoveredEvent`) dispatched by
+      `ModelCatalog::discoverModels()` after persistence — lets other modules re-tag,
+      prune, or sync the freshly discovered catalog. "Notify that something happened"
+      → event is the right tool.
+- [ ] **Alter hook for the discovered/persisted set** (`hook_llama_cpp_discovered_models_alter`)
+      — "let another module change this data" is cheaper than an event and Drupal-native.
+- [ ] **Pluggable capability detection** — today `detectOperationTypes()` is a closed
+      regex + HuggingFace heuristic. If exotic backends need custom detection, expose a
+      tagged-service / plugin collector ("capability detectors") rather than an event.
+- [ ] Note: reacting to server/model **CRUD** needs no new code — entity hooks
+      (`hook_llama_cpp_server_insert/update/delete`, `_presave`) already fire for free.
+
 ## Phase 5 — Evaluate vendor-neutral positioning (3.x)
 
 - [ ] Decide on the universal module name/project (`ai_provider_universal`?) and whether to
       extract Track B. Resolve open questions in DESIGN.md §11.
+
+## Phase 6 — Smart routing (AMD hackathon, post-2.0)
+
+Route each operation to the best server/model automatically. **Do not add these fields
+to 2.0** — it is schema churn right before the alpha; build it as its own feature with a
+dedicated schema + update hook. Core design rule: **config = what a human decides and we
+want in the config export; State = what the system measures** (keep volatile metrics out
+of config entities so cold-read config diffs stay clean, per Phase 0.5).
+
+Routing signals, split by where they live:
+
+- [ ] **Static metadata → config on the `llama_cpp_model` (and/or server) entity:**
+  - [ ] `cost_per_1k_input` / `cost_per_1k_output` — key signal for cloud backends
+        (Fireworks, AMD cloud); defaults to `0` for local/self-hosted. **Gap in core:**
+        no provider (incl. ai_provider_quant_cloud) has cost metadata — open differentiator.
+  - [ ] `context_length` — **already supported by core** via the static model registry
+        (`ai/resources/common_models/chat.yml`) + `AiProviderClientBase::getModelInfo()`.
+        Persist/consume it for routing; do not reinvent. Autopopulate from discovery.
+  - [ ] `priority` / weight (int) — manual per-model preference ("prefer this for chat").
+        No mechanism exists in core.
+  - [ ] (optional) `quality`/tier label — no `AiModelInfo` class exists in core.
+- [ ] **Runtime signals → State/cache, never config:** measured latency, tokens/sec,
+      health, free VRAM / GPU load. Observed (moving average), not configured.
+- [ ] **Routing engine:** pick server/model per operation by capability + context fit +
+      cost + priority, with measured latency/health as tiebreakers. Demo angle: orchestrate
+      local (gfx1150 ROCm) + AMD cloud / Fireworks (all OpenAI-compatible) in one flow.
+- [ ] **Upstream question:** implement cost/priority/quality as custom keys here first,
+      then consider an RFC to extend core's model `metadata` + `ChatModelForm` so it surfaces
+      in the shared AI UI — would position this module as the one that defined the standard.
+
+## Phase 7 — Fact check (AMD hackathon, post-2.0)
+
+- [ ] Add a fact-check capability/operation (moderation-like verification, or an agent
+      workflow routing claim → model + source). Fits the hackathon "AI agents" theme.
 
 ---
 

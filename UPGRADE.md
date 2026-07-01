@@ -89,6 +89,21 @@ The updates run in order and are idempotent (safe to re-run):
   (Your single `default` server keeps its host/port, which did survive in
   config.)
 
+> **Tip — with only a few servers, recreating them by hand is often simpler.**
+> Because the automated migration can only recover per-server host/port for the
+> single `default` server (1.x never stored it for the extra ones), a multi-server
+> setup leaves you re-entering hosts and re-discovering models anyway. If you only
+> have a handful of backends, it is usually faster and cleaner to skip the
+> half-migrated shells and just recreate the servers manually:
+>
+> 1. **Configuration → AI → Providers → llama.cpp servers → Add server** — enter
+>    host, port and (if needed) a Key for each backend. Saving discovers its models.
+> 2. Delete the empty "(migrated from 1.x state)" shells you don't need.
+> 3. Re-select your models per operation type in **AI → Settings**.
+>
+> You still get the automatic `default_providers` remap from the update hooks; this
+> just trades a few minutes of clicking for not having to fix up incomplete entities.
+
 > **Read the `drush updb` output.** If a model reference could not be
 > auto-remapped, `update_10203` reports the affected operation types, e.g.:
 >
