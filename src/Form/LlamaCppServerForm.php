@@ -266,12 +266,26 @@ class LlamaCppServerForm extends EntityForm {
     try {
       $provider = $this->aiProviderManager->createInstance('llama_cpp', ['server_id' => $server->id()]);
       if ($provider instanceof LlamaCppProvider) {
-        $provider->discoverModels();
+        $models = $provider->discoverModels();
+        $this->messenger()->addStatus($this->formatPlural(
+          count($models),
+          'Discovered 1 model on server %label.',
+          'Discovered @count models on server %label.',
+          ['%label' => $server->label()],
+        ));
       }
     }
-    catch (\Throwable) {
+    catch (\Throwable $e) {
       // Connectivity is validated in validateForm(); discovery may still fail
-      // if the server is temporarily unreachable after save.
+      // if the server is temporarily unreachable after save. Surface it instead
+      // of silently swallowing, so the user knows why no models appeared.
+      $this->logger('ai_provider_llama_cpp')->error(
+        'Model discovery failed for server @id after save: @message',
+        ['@id' => $server->id(), '@message' => $e->getMessage()],
+      );
+      $this->messenger()->addWarning($this->t('The server was saved, but model discovery failed: @message. Check the server is reachable and re-run discovery.', [
+        '@message' => $e->getMessage(),
+      ]));
     }
 
     // Persist manual operation type overrides on the model config entities.
